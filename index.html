@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>KINGDOMS RTS — Autumn Forest</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏰</text></svg>"/>
+<style>
+:root{--bg:#1a120b;--panel:#241a10ee;--gold:#f5b942;--wood:#8a5a2b;--green:#7fb069;--ink:#fff7e8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overscroll-behavior:none}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+#topbar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:linear-gradient(#2e2113,#241a10);border-bottom:1px solid #4a3020;z-index:5;font-size:14px;flex-wrap:wrap}
+.pill{background:#0008;border:1px solid #ffffff22;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.pill b{color:var(--gold)}
+#timer{margin-left:auto;opacity:.8}
+#view{position:relative;flex:1;overflow:hidden;touch-action:none;background:#0e0a06}
+#gl{position:absolute;inset:0}
+#gl canvas{display:block}
+#minimap{position:absolute;right:8px;bottom:8px;width:132px;height:132px;border:2px solid #ffffff33;border-radius:10px;background:#000c;z-index:4}
+#selcard{position:absolute;left:8px;bottom:8px;max-width:min(72vw,340px);background:var(--panel);border:1px solid #ffffff22;border-radius:12px;padding:10px;z-index:4;backdrop-filter:blur(6px)}
+#selcard h3{margin:0 0 4px;font-size:15px}
+#selcard p{margin:2px 0;font-size:12px;opacity:.9}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+button{background:#3a2a16;color:var(--ink);border:1px solid #ffffff2e;border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700}
+button:active{transform:scale(.97)}
+button.primary{background:linear-gradient(#ffcf6b,#e89b2e);color:#241505;border:none}
+button.danger{background:#6e1f1f}
+button:disabled{opacity:.4}
+#toolbar{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;display:none}
+#menu{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,#4a2f14 0%,#1a120b 70%);padding:16px}
+.card{background:var(--panel);border:1px solid #ffffff2a;border-radius:18px;padding:20px;max-width:560px;width:100%;box-shadow:0 20px 60px #000a;max-height:92vh;overflow:auto}
+.card h1{margin:0;font-size:26px;letter-spacing:.5px}
+.card h1 span{color:var(--gold)}
+.card .sub{opacity:.85;font-size:13px;margin:6px 0 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.faction{border:2px solid #ffffff22;border-radius:12px;padding:8px;cursor:pointer;font-size:12px;background:#0006}
+.faction.sel{border-color:var(--gold);background:#3a2a1666}
+.faction b{display:block;font-size:13px}
+label.row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin:8px 0;background:#0005;padding:8px 10px;border-radius:10px}
+select,input[type=range]{accent-color:var(--gold)}
+#toast{position:absolute;top:52px;left:50%;transform:translateX(-50%);background:#000d;border:1px solid #ffffff33;padding:8px 14px;border-radius:999px;font-size:13px;z-index:6;display:none}
+#endcard{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:9;background:#000a}
+#hint{position:absolute;top:52px;left:8px;font-size:11px;background:#0009;padding:6px 9px;border-radius:8px;z-index:4;max-width:60vw}
+kbd{background:#fff2;border-radius:4px;padding:0 5px}
+@media (max-width:640px){#hint{display:none}#selcard{font-size:12px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="pill">🪙 <b id="r-gold">0</b></span>
+    <span class="pill">🪵 <b id="r-wood">0</b></span>
+    <span class="pill">🍏 <b id="r-food">0</b></span>
+    <span class="pill">🏠 <b id="r-pop">0/0</b></span>
+    <span class="pill">⚔️ <b id="r-army">0</b></span>
+    <span id="timer">00:00</span>
+  </div>
+  <div id="view">
+    <div id="gl"></div>
+    <canvas id="minimap" width="132" height="132"></canvas>
+    <div id="selcard" style="display:none"></div>
+    <div id="hint">Tap: select / order &nbsp;•&nbsp; Drag: pan &nbsp;•&nbsp; Pinch: zoom &nbsp;•&nbsp; Long-press: build</div>
+    <div id="toast"></div>
+    <div id="menu"><div class="card">
+      <h1>KINGDOMS <span>en Guerre</span></h1>
+      <div class="sub">🍂 Autumn-forest mobile RTS • Town Hall → Farms → Barracks → destroy the enemy Town Hall. Tap to select, tap ground to move, tap enemy to attack.</div>
+      <div class="sub"><b>Mission 1:</b> 1v1 vs AI. Start: Town Hall + 2 Peasants. Win by razing the enemy Town Hall.</div>
+      <b style="font-size:13px">Choose faction (Human fully playable; others remix stats)</b>
+      <div class="grid2" id="factions"></div>
+      <label class="row">AI personality
+        <select id="ai"><option value="aggressor">🔥 Aggressor — early pressure</option><option value="turtle">🛡️ Defender — turtles</option><option value="expander" selected>🌲 Expander — booms</option></select>
+      </label>
+      <label class="row">Fog of war <select id="fog"><option value="on" selected>On</option><option value="off">Off</option></select></label>
+      <label class="row">Game speed <select id="speed"><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+      <label class="row">Sound <select id="sound"><option value="on" selected>On</option><option value="off">Off</option></select></label>
+      <div class="btnrow">
+        <button class="primary" id="startBtn" style="flex:1">▶ Start battle</button>
+        <button id="continueBtn" disabled>↻ Continue</button>
+      </div>
+      <div class="btnrow"><button id="helpBtn" style="flex:1">How to play</button><button id="wipeBtn">Wipe save</button></div>
+      <div class="sub" id="profileLine" style="margin-top:10px"></div>
+      <div class="sub">Systems: Core Engine · World · Economy · Military · 8 Factions · Buildings · AI · Chibi 3D · Campaign/Meta. Saves to device. Pause anytime (SP-safe).</div>
+    </div></div>
+    <div id="endcard"><div class="card" style="text-align:center"><h1 id="endTitle">Victory!</h1><div class="sub" id="endSub"></div><div class="btnrow"><button class="primary" id="againBtn" style="flex:1">Play again</button><button id="menuBtn">Menu</button></div></div></div>
+  </div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
