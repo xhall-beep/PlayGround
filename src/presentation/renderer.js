@@ -26,21 +26,27 @@ export class Renderer{
     this.resize(); addEventListener('resize',()=>this.resize());
   }
   lights(){
-    this.scene.add(new THREE.HemisphereLight(0xffe6c0,0x3a2a18,0.95));
-    const sun=new THREE.DirectionalLight(0xffd9a0,1.6);
+    // High-saturation chibi key: warm sun, cool sky bounce, punchy fill.
+    this.scene.add(new THREE.HemisphereLight(0xfff0d2,0x4a7a2a,1.15));
+    const sun=new THREE.DirectionalLight(0xfff2c4,2.15);
     sun.position.set(30,48,18); sun.castShadow=true;
     sun.shadow.mapSize.set(1024,1024); sun.shadow.camera.left=-60;sun.shadow.camera.right=60;sun.shadow.camera.top=60;sun.shadow.camera.bottom=-60;
     this.scene.add(sun);
+    // Saturation-preserving tone curve: crushes nothing, lifts mid-tones into candy.
+    this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure=1.18;
   }
   ground(){
     const geo=new THREE.PlaneGeometry(WORLD,WORLD,GRID,GRID);
     geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position, colors=[];
-    const c1=new THREE.Color(0x6d8f3e),c2=new THREE.Color(0xc98f3d),c3=new THREE.Color(0x4f7030);
+    // Saturated autumn palette: emerald grass, amber leaf litter, deep moss shade.
+    const c1=new THREE.Color(0x7fc23a),c2=new THREE.Color(0xffa62b),c3=new THREE.Color(0x46a02c);
     for(let i=0;i<pos.count;i++){
       const x=pos.getX(i),z=pos.getZ(i);
       const n=Math.sin(x*0.35)*Math.cos(z*0.3)+Math.sin(x*0.12+z*0.2);
-      const c=n>0.6?c2:(n<-0.4?c3:c1);
+      const c=(n>0.6?c2:(n<-0.4?c3:c1)).clone();
+      c.offsetHSL(0,0.18,0.02); // extra chroma, still readable
       colors.push(c.r,c.g,c.b);
       pos.setY(i,Math.sin(x*0.15)*Math.cos(z*0.15)*0.25);
     }
@@ -52,14 +58,30 @@ export class Renderer{
     this.fogMat=new THREE.MeshBasicMaterial({map:this.fogTex,transparent:true,opacity:0.92,depthWrite:false});
     this.fogMesh=new THREE.Mesh(fg,this.fogMat); this.fogMesh.position.y=0.6; this.scene.add(this.fogMesh);
   }
-  resize(){ const w=this.container.clientWidth,h=this.container.clientHeight; this.camera.aspect=w/h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w,h); }
+  // Fixed-camera distance + FOV by aspect. Vertical FOV widens on tall phones so
+  // the whole clearing stays reachable by thumb without moving the camera.
+  camDistFor(aspect){ return aspect<0.75?42:(aspect<1.2?38:30); }
+  fovFor(aspect){ return aspect<0.75?60:(aspect<1.2?50:46); }
+  resize(){
+    const w=this.container.clientWidth,h=this.container.clientHeight;
+    this.camera.aspect=w/h;
+    this.camera.fov=this.fovFor(this.camera.aspect);
+    this.camera.updateProjectionMatrix(); this.renderer.setSize(w,h);
+    if(this.fixed&&this.fixedTarget){ this.fixedTarget.dist=this.camDistFor(this.camera.aspect); }
+  }
+  // Fixed-camera mode: tutorial locks framing so a thumb never wanders off-map.
+  setFixedCamera(on,x=0,z=0,dist=52){
+    this.fixed=on; this.fixedTarget={x,z,dist};
+    if(on){ this.target.set(x,0,z); this.dist=dist; }
+  }
+  isFixed(){ return !!this.fixed; }
   buildStatic(map){
     // clear old
     for(const m of this.resMeshes){this.scene.remove(m.g); } this.resMeshes=[];
     const treeTrunk=new THREE.CylinderGeometry(0.35,0.5,1.6,6);
     const treeTop=new THREE.ConeGeometry(1.4,2.6,7);
-    const trunkMat=new THREE.MeshStandardMaterial({color:0x5a3a20,roughness:1});
-    const leafMats=[0xd97b2b,0xe8a33d,0xb85c26,0x7fb069].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:0.9}));
+    const trunkMat=new THREE.MeshStandardMaterial({color:0x8a5a2b,roughness:1});
+    const leafMats=[0xff7a1a,0xffb02e,0xff5e1f,0x7fd94a].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:0.85,flatShading:true}));
     map.trees.forEach((t,i)=>{
       const g=new THREE.Group();
       const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=0.8; trunk.castShadow=true; g.add(trunk);
@@ -159,12 +181,37 @@ export class Renderer{
     // hits
     for(const h of this.hits){ h.t-=0.016; h.m.scale.setScalar(h.m.scale.x+0.12); h.m.material.opacity=Math.max(0,h.t*2); if(h.t<=0){this.scene.remove(h.m);}}
     this.hits=this.hits.filter(h=>h.t>0);
+    this.syncCoachMark(time);
     // camera
+    if(this.fixed&&this.fixedTarget){ this.target.set(this.fixedTarget.x,0,this.fixedTarget.z); this.dist=this.fixedTarget.dist; }
     const cx=this.target.x+Math.sin(this.yaw)*Math.cos(this.pitch)*this.dist;
     const cz=this.target.z+Math.cos(this.yaw)*Math.cos(this.pitch)*this.dist;
     const cy=Math.sin(this.pitch)*this.dist;
     this.camera.position.set(cx,cy,cz); this.camera.lookAt(this.target.x,0,this.target.z);
     this.renderer.render(this.scene,this.camera);
+  }
+  // ---- tutorial coach mark: pulsing ground ring + bobbing arrow ----
+  setCoachMark(target){ this.coach=target||null; if(!this.coach){ if(this.coachMesh){this.scene.remove(this.coachMesh.group); this.coachMesh=null;} return; }
+    if(this.coachMesh) return;
+    const group=new THREE.Group();
+    const ring=new THREE.Mesh(new THREE.RingGeometry(1.5,2.0,32),
+      new THREE.MeshBasicMaterial({color:0xffe14d,transparent:true,opacity:0.95,side:THREE.DoubleSide}));
+    ring.rotation.x=-Math.PI/2; ring.position.y=0.12; group.add(ring);
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.0,12),
+      new THREE.MeshBasicMaterial({color:0xffd21f}));
+    cone.position.y=5.0; cone.rotation.x=Math.PI; group.add(cone);
+    this.scene.add(group); this.coachMesh={group,ring,cone};
+  }
+  syncCoachMark(time){
+    if(!this.coachMesh||!this.coach) return;
+    const {x,z,radius=1.6,height=4.2}=this.coach;
+    const g=this.coachMesh.group;
+    g.position.set(x,0,z);
+    const pulse=1+Math.sin(time*4)*0.12;
+    this.coachMesh.ring.scale.setScalar(pulse);
+    this.coachMesh.ring.material.opacity=0.6+Math.sin(time*4)*0.3;
+    this.coachMesh.cone.position.y=height+Math.sin(time*4)*0.28;
+    this.coachMesh.cone.scale.setScalar(radius/1.6);
   }
   syncProj(e){
     let rec=this.meshes.get('p'+e.id);

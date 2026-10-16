@@ -44,10 +44,12 @@ export function tick(st,map,dt){
       // unit AI
       e.cool-=dt;
       updateUnit(st,map,e,dt,fm[e.owner],blockedCache);
-      // QoL: idle player peasants auto-seek wood after 6s (classic RTS behavior)
+      // QoL: idle player peasants auto-seek wood after 6s (classic RTS behavior).
+      // In Mission 1 they stay inside the clearing so the fixed camera keeps them
+      // on screen and tappable.
       if(e.owner===0&&e.type==='peasant'&&e.order&&e.order.kind==='idle'){
         e.idleT=(e.idleT||0)+dt;
-        if(e.idleT>6){ e.idleT=0; const i=findResource(map,e.x,e.z,'tree',st); if(i>=0) orderGather(st,map,e,'tree',i); }
+        if(e.idleT>6){ e.idleT=0; const i=findResource(map,e.x,e.z,'tree',st,st.tutorial?15:Infinity); if(i>=0) orderGather(st,map,e,'tree',i); }
       } else e.idleT=0;
     }
   }
@@ -162,9 +164,9 @@ export function orderMove(st,e,x,z,attack){
 export function orderAttack(st,e,id){ e.order={kind:'attack',id}; e.building=false; }
 export function orderGather(st,map,e,kind2,idx){ e.order={kind:'gather',kind2,idx}; }
 export function orderBuild(st,e,id){ e.order={kind:'build',id}; }
-export function findResource(map,x,z,kind2,st){
+export function findResource(map,x,z,kind2,st,maxR=Infinity){
   const arr=kind2==='gold'?map.gold:map.trees;
-  let bi=-1,bd=1e9;
+  let bi=-1,bd=maxR*maxR;
   for(let i=0;i<arr.length;i++){ if(arr[i].amount<=0)continue; const d=(arr[i].x-x)**2+(arr[i].z-z)**2; if(d<bd){bd=d;bi=i;} }
   return bi;
 }
