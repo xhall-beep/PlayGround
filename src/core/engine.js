@@ -4,18 +4,32 @@ import { factionMult } from '../factions/factions.js';
 
 let UID = 1;
 export function reseedUID(st){ let m=0; for(const e of st.entities) if(typeof e.id==='number'&&e.id>m)m=e.id; UID=Math.max(UID,m+1); }
+export function resetUID(v=1){ UID=v; }
+// Deterministic RNG (mulberry32). State lives in the save as a plain number,
+// so replays, balance runs and lockstep-style state hashing all agree.
+export function srand(st){
+  if(!Number.isFinite(st.rngState)) st.rngState=(st.seed|0)>>>0;
+  let a=(st.rngState=(st.rngState+0x6D2B79F5)>>>0);
+  let t=a;
+  t=Math.imul(t^(t>>>15),t|1);
+  t^=t+Math.imul(t^(t>>>7),t|61);
+  return ((t^(t>>>14))>>>0)/4294967296;
+}
 export function makeState(opts){
+  const seed=(opts.seed??((Math.random()*1e9)|0))>>>0;
   return {
     t:0, tick:0, over:null, speed:Number(opts.speed||1),
     fog: opts.fog!=='off',
     playerFaction: opts.faction||'human', aiFaction: opts.aiFaction||'undead',
     aiPersona: opts.ai||'expander',
-    seed: (Math.random()*1e9)|0,
+    seed,
+    rngState: seed,
     entities:[], // {id,owner,kind,type,x,z,hp,maxHp,state,...}
     res:[ {gold:220,wood:160,food:2,popCap:5},{gold:220,wood:160,food:2,popCap:5} ],
     stats:{ kills:[0,0], razes:[0,0] },
     firstBlood:false,
     achievements:[],
+    specialCd:[0,0],
   };
 }
 
@@ -76,5 +90,5 @@ export function saveGame(st,map){ try{ localStorage.setItem(KEY, JSON.stringify(
 export function loadGame(){ try{ const s=localStorage.getItem(KEY); return s?JSON.parse(s):null;}catch{return null;} }
 export function wipeSave(){ try{localStorage.removeItem(KEY);}catch{} }
 const PKEY='kingdoms-rts-profile-v1';
-export function getProfile(){ try{return JSON.parse(localStorage.getItem(PKEY)||'{"wins":0,"losses":0,"best":"","ach":[]}');}catch{return{wins:0,losses:0,best:'',ach:[]};} }
+export function getProfile(){ try{return JSON.parse(localStorage.getItem(PKEY)||'{"wins":0,"losses":0,"best":"","ach":[],"missions":[]}');}catch{return{wins:0,losses:0,best:'',ach:[],missions:[]};} }
 export function setProfile(p){ try{localStorage.setItem(PKEY,JSON.stringify(p));}catch{} }

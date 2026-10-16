@@ -1,4 +1,4 @@
-// World: map generation (autumn forest), resources, fog, A* pathfinding.
+// World: map generation (lush forest), resources, fog, A* pathfinding.
 import { WORLD, GRID, CELL, g2w, w2g } from '../core/engine.js';
 
 export function genMap(seed){

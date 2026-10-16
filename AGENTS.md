@@ -29,6 +29,14 @@ for(let i=0;i<3000;i++){S.tick(st,map,0.1); if(i%20===0)A.aiTick(st,map); if(st.
 console.log('over',st.over,'t',st.t.toFixed(0));"
 ```
 
+AI-vs-AI balance harness (deterministic, self-checks reproducibility, prints per-faction win rates):
+
+```bash
+node balance.mjs [seedsPerMatchup=1] [maxMinutes=20]
+```
+
+`aiTick(st,map,owner)` takes the owner now (default 1), so the harness drives both sides. Deterministic replays require `resetUID(1)` per run (module-level UID is global) — the harness does this.
+
 Node-importable (no DOM/three at import time): `src/core`, `src/world`, `src/sim`, `src/ai`, `src/missions`, `src/buildings/data.js`, `src/factions/factions.js`. `src/presentation/*` imports `three` — browser only.
 
 Adding a root `package.json` flips the deploy path to Vite and `start.sh` will run `vite build`; don't add one casually.
@@ -37,7 +45,11 @@ Adding a root `package.json` flips the deploy path to Vite and `start.sh` will r
 
 - **Engine owns state, presentation owns pixels.** `core/engine.js` holds a plain-object `st` + entity list; `sim/sim.js:tick()` is the only mutator; `main.js:loop()` is a fixed 10 Hz accumulator (`STEP=0.1`, max 5 substeps/frame) decoupled from `requestAnimationFrame`.
 - **Resource keys are `gold` / `wood` only.** Never write `st.res[o][kind]` with a raw kind string — `gather` carries `kind2:'gold'|'tree'` and must map `tree → wood` in the deposit branch. This exact bug shipped once.
-- **Faction scaling** goes through `factionMult(owner)` → keys `hp/dmg/cost/speed/build/archer/wood/gold`; missing keys must fall back (`?? 1`).
+- **Faction scaling** goes through `factionMult(owner)` → keys `hp/dmg/cost/speed/build/archer/wood/gold`; missing keys must fall back (`?? 1`). Four core factions only (`CORE_FACTIONS`: human/orc/undead/elf); the rest are locked legacy entries — use `coreFaction()` to normalize, and `applyFactionTheme()` (`data-faction` + `.cnr` SVG corners) whenever the selection changes. Entities carry `f` (faction tag) for faction-colored meshes; specials go through `castSpecial(st,map,owner)` with `st.specialCd` cooldowns.
+- **Determinism**: `srand(st)` (`engine.js`, mulberry32 seeded from `st.seed`, state serialized as `st.rngState`) is the only RNG allowed in `sim/` or `ai/` — never `Math.random`; projectile ids, AI build spots, unit picks all use it so replays/balance runs reproduce. The crowd-separation tiebreak reads `a.id+b.id`, hence `resetUID(n)` for fresh runs.
+- **Instanced trees**: `renderer.treeIM` holds 3 `InstancedMesh` layers (trunk/top/tip); per-instance color = leaf palette, fog/`amount<=0` visibility = zero-scale matrices in `sync()`. Gold stays per-mesh in `resMeshes`. Whole forest ≈ 3 draw calls (battle total ~35).
+- **Battle QoL**: double-tap a unit (380 ms window, `lastPat` in `main.js`) selects same-type units within 16; tapping ground with only production buildings selected sets `b.rally` and production spawns walk there (`sim.js` queue branch). AI pushes are telegraphed via a throttled `⚔️ Enemy army is marching!` toast (`st._pushAt`) and prefer the enemy Town Hall.
+- **Crash/perf surfaces**: `#errbox` overlay wires `error`/`unhandledrejection` in `main.js`; `BUILD` tag renders into `#buildTag`; sandbox `#perf` line shows fps + `renderer.info.render.calls`.
 - **Mission layer (`src/missions/`)** is strictly a *reader* of engine state: steps expose `done(ctx)`, `progress(ctx)`, `progressText(ctx)`, `mark`; `MissionRunner.tick()` returns `step-done` / `step-start` / `mission-done` events. It must not mutate the sim — assists go through the exported `order*` functions.
 - **Camera**: `renderer.setFixedCamera(on,x,z,dist)` locks framing; `camDistFor`/`fovFor(aspect)` size it per orientation. Input no-ops pan/pinch when `game.isCameraLocked()`.
 - **Save/load**: `localStorage` keys `kingdoms-rts-save-v1` (game) and `kingdoms-rts-profile-v1` (meta: wins/losses/achievements/missions).
@@ -48,7 +60,7 @@ Adding a root `package.json` flips the deploy path to Vite and `start.sh` will r
 |---|---|
 | **Force inject** | `sim.js` exports `orderMove/orderAttack/orderGather/orderBuild/fireProjectile`; `addEntity`/`pay` for raw state pokes. For a deterministic command layer, copy `kingdoms-rts/src/session/commands.ts` (`Command` union + `CommandLog`) — that AI emits into a sink instead of mutating. |
 | **Copycat** | `kingdoms-rts/` is an untracked clone of `xhall-beep/kingdoms-rts` and the reference architecture: deterministic ECS in `src/core`, one-file-per-system `src/systems/`, `src/ai/nav-grid.ts` flow fields, `src/net/` lockstep + snapshots, 20 factions with signature mechanics. Port patterns, don't copy file layout. It is a separate npm/vite project — `npm test` there needs its own `npm install`. |
-| **Hyper scale** | Headless loop above (3000 ticks ≈ seconds); in-browser `window.__game.st.speed = 6` fast-forwards the accumulator. Batch harness patterns: `kingdoms-rts/src/tests/match-runner.ts:runMatch`, `perf.ts:benchmark`. |
+| **Hyper scale** | Headless loop above (3000 ticks ≈ seconds); `balance.mjs` runs the full 4×3 AI-vs-AI matrix with per-faction win rates; in-browser `window.__game.st.speed = 6` fast-forwards the accumulator. Batch harness patterns: `kingdoms-rts/src/tests/match-runner.ts:runMatch`, `perf.ts:benchmark`. |
 | **Auto-all** | `playwright-cli` drives a real browser: `open` → `eval` (inject JS) → `screenshot` → `close`. Output lands in `$HOME/.local/share/omgithub-playwright/output/`, not the repo (`screenshots/` is gitignored too). |
 | **Access-all** | `window.__game` = `{st, map, sel, renderer, mission, paused, running}` live getters (`main.js`). It is non-null **on the menu too** — the boot demo scene owns a state, so `__game.st` existing does not mean a match is running. |
 | **Fix-it** | Traps below are the recurring classes; headless sim → browser re-verify is the standard loop. |

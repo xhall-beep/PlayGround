@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { makeState, addEntity, byId, alive, reseedUID, saveGame, loadGame, wipeSave, getProfile, setProfile, popCap, ownerPop, canAfford, pay, WORLD, CELL, GRID } from './core/engine.js';
 import { genMap, updateFog } from './world/world.js';
-import { tick, spawnBase, orderMove, orderAttack, orderGather, findResource } from './sim/sim.js';
+import { tick, spawnBase, orderMove, orderAttack, orderGather, findResource, castSpecial } from './sim/sim.js';
 import { aiTick } from './ai/ai.js';
-import { FACTIONS, factionMult } from './factions/factions.js';
+import { FACTIONS, factionMult, CORE_FACTIONS, EXPANSION_FACTIONS, coreFaction } from './factions/factions.js';
 import { BUILDINGS, UNITS, trainableAt } from './buildings/data.js';
 import { Renderer } from './presentation/renderer.js';
 import { bindInput } from './presentation/input.js';
@@ -14,21 +14,49 @@ import { TutorialUI } from './missions/tutorial-ui.js';
 
 const $=id=>document.getElementById(id);
 const view=$('view'), gl=$('gl');
+const BUILD='v0.5.0';
+
+// ---- crash visibility: never let a phone die silently ----
+function showErr(msg){ const b=$('errbox'); if(!b)return; $('errmsg').textContent=String(msg); b.style.display='block'; }
+addEventListener('error',e=>showErr(`${e.message||e.error||'error'}${e.filename?`\n${e.filename}:${e.lineno||0}`:''}`));
+addEventListener('unhandledrejection',e=>showErr(`Unhandled promise: ${(e.reason&&e.reason.message)||e.reason}`));
+$('errclose').onclick=()=>{ $('errbox').style.display='none'; };
 
 let renderer=null, st=null, map=null, sel=new Set(), running=false, paused=false;
 let lastT=0, acc=0, aiAcc=0, saveAcc=0, uiAcc=0, selAcc=0, buildGhost=null;
+let lastPat=null, perfFrames=0, perfT=0;
 let mission=null, tut=null, tutUI=null;
-const AI_ORDER=['undead','goblin','demon','wilde','elf','dwarf','fae'];
+const AI_ORDER=['orc','undead','elf','human'];
+
+// ---- faction-reactive UI skin: data-faction theme + procedural SVG corners ----
+const FACTION_CORNERS={
+human:`<svg viewBox="0 0 32 32" fill="none"><path d="M2 30V10Q2 2 10 2h20" stroke="#e2e8f0" stroke-width="3"/><path d="M7 30V12Q7 7 12 7h18" stroke="#1d4ed8" stroke-width="1.6"/><rect x="4" y="4" width="7" height="7" transform="rotate(45 7.5 7.5)" fill="#e2e8f0"/></svg>`,
+orc:`<svg viewBox="0 0 32 32" fill="none"><path d="M2 30V20l6 1-2-8 6 2-2-7 6 1-1-7h15" stroke="#dc2626" stroke-width="2.6"/><path d="M7 30v-6l5 1-1-6 5 1-1-5 4 1V7h11" stroke="#78350f" stroke-width="1.4"/></svg>`,
+undead:`<svg viewBox="0 0 32 32" fill="none"><path d="M30 4A26 26 0 0 1 4 30M30 4A18 18 0 0 1 12 30M30 4A10 10 0 0 1 20 30" stroke="#d6d3d1" stroke-width="1.5"/><path d="M4 4l26 0M4 4l18 18M4 4l0 26" stroke="#d6d3d1" stroke-width="1.2"/><path d="M30 4A22 22 0 0 1 8 30" stroke="#a855f7" stroke-width="1.6"/></svg>`,
+elf:`<svg viewBox="0 0 32 32" fill="none"><path d="M3 29Q5 10 29 5" stroke="#065f46" stroke-width="2.6"/><ellipse cx="11" cy="19" rx="4.5" ry="2.2" transform="rotate(-38 11 19)" fill="#fbbf24"/><ellipse cx="19" cy="11" rx="4.5" ry="2.2" transform="rotate(-38 19 11)" fill="#8fd694"/><circle cx="24" cy="7" r="1.8" fill="#fbbf24"/></svg>`};
+function applyFactionTheme(f){
+  const key=coreFaction(f);
+  document.documentElement.dataset.faction=key;
+  document.body.dataset.faction=key;
+  const art=FACTION_CORNERS[key]||'';
+  document.querySelectorAll('.cnr').forEach(el=>{ el.innerHTML=art; });
+  return key;
+}
 
 // ---- menu ----
 function renderFactions(){
-  const box=$('factions'); box.innerHTML=''; let cur='human';
-  for(const [k,f] of Object.entries(FACTIONS)){
-    const d=document.createElement('div'); d.className='faction'+(k===cur?' sel':''); d.innerHTML=`<b>${f.icon} ${f.name}</b>${f.desc}`;
-    d.onclick=()=>{ box.querySelectorAll('.faction').forEach(x=>x.classList.remove('sel')); d.classList.add('sel'); box.dataset.sel=k; sfx.select(); };
+  const box=$('factions'); box.innerHTML=''; let cur=coreFaction(box.dataset.sel||'human');
+  for(const k of CORE_FACTIONS){ const f=FACTIONS[k];
+    const d=document.createElement('div'); d.className='faction'+(k===cur?' sel':''); d.innerHTML=`<b>${f.icon} ${f.name}</b><i>${f.title}</i>${f.desc}`;
+    d.onclick=()=>{ applyFactionTheme(k); box.querySelectorAll('.faction').forEach(x=>x.classList.remove('sel')); d.classList.add('sel'); box.dataset.sel=k; sfx.select(); };
     box.appendChild(d);
   }
-  box.dataset.sel='human';
+  box.dataset.sel=cur;
+  const ex=document.createElement('div'); ex.id='expansionRow';
+  ex.innerHTML=`<b>🔒 Expansion Factions — Coming Soon</b><span>${EXPANSION_FACTIONS.map(k=>`${FACTIONS[k].icon} ${FACTIONS[k].name}`).join(' · ')}</span>`;
+  ex.onclick=()=>toast('🔒 Expansion factions are coming soon — Human, Orc, Undead and Elf are playable now.');
+  box.appendChild(ex);
+  applyFactionTheme(cur);
   const prof=getProfile();
   $('profileLine').textContent=`🏆 Wins ${prof.wins} · Losses ${prof.losses}`+(prof.best?` · Fastest win ${prof.best}`:'')+(prof.ach.length?` · ${prof.ach.join(' ')}`:'');
   $('continueBtn').disabled=!loadGame();
@@ -54,9 +82,11 @@ function startMission1(){
   tutUI.onSkip=()=>exitTutorial();
   tutUI.onDone=()=>exitTutorial();
   begin(true);
+  renderer.addBaseDecal(sc.spawn.x,sc.spawn.z,'human');
+  applyFactionTheme('human');
   tutUI.show();
   tutUI.update(mission,makeCtx(st,map,sel,mission.history,0));
-  toast('🍂 Welcome to Autumn Forest — nobody will attack you here.',3600);
+  toast('🌲 Welcome to Greenvale — nobody will attack you here.',3600);
 }
 function genTutMap(seed){
   // One clearing ringed with trees so gathering is one tap away. Nodes sit close
@@ -114,7 +144,9 @@ function updateCoachMark(){
 
 // ---- game start ----
 function startNew(faction){
-  const aiF=AI_ORDER[(Math.random()*AI_ORDER.length)|0];
+  faction=coreFaction(faction);
+  const foes=AI_ORDER.filter(f=>f!==faction);
+  const aiF=foes[(Math.random()*foes.length)|0];
   st=makeState({faction,aiFaction:aiF,ai:$('ai').value,fog:$('fog').value,speed:$('speed').value});
   setSound($('sound').value);
   map=genMap(st.seed);
@@ -123,6 +155,9 @@ function startNew(faction){
   // starting resources near bases already in map; give peasant orders
   updateFog(st,map);
   begin();
+  renderer.addBaseDecal(-30,-30,faction);
+  renderer.addBaseDecal(30,30,aiF);
+  applyFactionTheme(faction);
   toast(`${FACTIONS[faction].icon} Your kingdom vs ${FACTIONS[aiF].icon} ${FACTIONS[aiF].name} (${st.aiPersona}) — raze their Town Hall!`,4200);
 }
 function startFromSave(s){
@@ -130,6 +165,8 @@ function startFromSave(s){
   st=s.st; st.events=[]; st.over=null; reseedUID(st); map={trees:s.map.trees,gold:s.map.gold,explored:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)],visible:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)]};
   // rebuild explored approx: mark all explored (simple)
   begin();
+  for(const e of st.entities) if(e.cat==='bld'&&e.type==='townhall'&&!e.dead) renderer.addBaseDecal(e.x,e.z,e.owner===0?st.playerFaction:st.aiFaction);
+  applyFactionTheme(st.playerFaction);
 }
 function begin(isTutorial=false){
   $('menu').style.display='none'; $('endcard').style.display='none';
@@ -170,8 +207,15 @@ const game={
     }
     let best = st.tutorial ? (unit||bld) : (unit&&ud<bd+1.2 ? unit : (bld||unit));
     const mine=[...sel].map(id=>byId(st,id)).filter(u=>u&&!u.dead&&u.owner===0);
-    if(best&&best.owner===0){ // select
-      sel=new Set([best.id]); sfx.select(); renderSel();
+    if(best&&best.owner===0){ // select; double-tap = select all of the same type nearby
+      const now=performance.now();
+      if(best.cat==='unit'&&lastPat&&lastPat.id===best.id&&now-lastPat.t<380){
+        const squad=st.entities.filter(en=>!en.dead&&en.owner===0&&en.cat==='unit'&&en.type===best.type&&Math.hypot(en.x-best.x,en.z-best.z)<16);
+        sel=new Set(squad.map(en=>en.id));
+        toast(`Selected ${squad.length} ${UNITS[best.type].name}s`);
+      } else sel=new Set([best.id]);
+      lastPat={id:best.id,t:now};
+      sfx.select(); renderSel();
     } else if(best&&best.owner===1){ // attack / target
       if(mine.length){ mine.forEach((u,i)=>{ if(u.cat==='unit'){ if(u.type==='peasant'&&best.cat==='bld')return; orderAttack(st,u,best.id);} }); sfx.move(); toast('⚔️ Attack!'); }
       else { sel=new Set([best.id]); renderSel(); }
@@ -182,7 +226,9 @@ const game={
       const all=[['tree',map.trees],['gold',map.gold]];
       for(const [k,arr] of all) arr.forEach((n,i)=>{ if(n.amount>0&&Math.hypot(n.x-pt.x,n.z-pt.z)<2.5){node=n;nk=k;ni=i;} });
       const peas=mine.filter(u=>u.type==='peasant');
+      const rBlds=mine.filter(en=>en.cat==='bld'&&en.done&&trainableAt(en.type).length);
       if(node&&peas.length){ peas.forEach(p=>orderGather(st,map,p,nk==='gold'?'gold':'tree',ni)); sfx.move(); toast(nk==='gold'?'⛏️ Mine gold!':'🪓 Chop wood!'); }
+      else if(rBlds.length&&!mine.some(en=>en.cat==='unit')){ rBlds.forEach(b=>{b.rally={x:pt.x,z:pt.z};}); sfx.move(); toast('🚩 Rally point set'); renderSel(); }
       else if(mine.length&&mine.some(u=>u.cat==='unit')){ // move with formation
         mine.filter(u=>u.cat==='unit').forEach((u,i)=>{ const ox=(i%3-1)*1.8,oz=Math.floor(i/3)*1.8; orderMove(st,u,pt.x+ox,pt.z+oz,false); });
         sfx.move();
@@ -207,20 +253,26 @@ function renderSel(forceBuild=false){
   let html='';
   if(e.cat==='unit'){
     const U=UNITS[e.type];
-    html=`<h3>${U.icon} ${U.name} ${e.owner===1?'(enemy)':''}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0} · 🗡️ ${e.dmg} · ${e.order?('• '+e.order.kind):''}${e.carryAmt?` · carrying ${e.carryAmt} ${e.carry}`:''}</p>`;
+    html=`<h3>${U.icon} ${U.name} ${e.owner===1?'(enemy)':`<span class="fcap">${FACTIONS[coreFaction(st.playerFaction)].name}</span>`}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0} · 🗡️ ${e.dmg} · ${e.order?('• '+e.order.kind):''}${e.carryAmt?` · carrying ${e.carryAmt} ${e.carry}`:''}</p>`;
     if(e.owner===0){
-      html+=`<div class="btnrow">`;
-      if(e.type==='peasant') html+=`<button data-a="build">🔨 Build</button><button data-a="wood">🪓 Wood</button><button data-a="gold">⛏️ Gold</button>`;
-      html+=`<button data-a="stop">⏹ Stop</button></div><div class="btnrow" data-pane="build" style="display:${forceBuild?'flex':'none'}">`;
-      for(const [k,b] of Object.entries(BUILDINGS)){ if(k==='townhall')continue; const c=`${Math.ceil((b.cost.gold||0)*fm.cost)}🪙 ${Math.ceil((b.cost.wood||0)*fm.cost)}🪵`; html+=`<button data-b="${k}">${b.icon} ${b.name}<br><small>${c} · ${b.time}s</small></button>`; }
+      html+=`<div class="btnrow dock-main">`;
+      if(e.type==='peasant'){
+        for(const k of ['farm','barracks','tower']){ const b=BUILDINGS[k]; const c=`${Math.ceil((b.cost.gold||0)*fm.cost)}🪙 ${Math.ceil((b.cost.wood||0)*fm.cost)}🪵`;
+          html+=`<button data-b="${k}">${b.icon} Build ${b.name}<br><small>${c}</small></button>`; }
+        html+=`<button data-a="build">🔨 More</button><button data-a="wood">🪓 Wood</button><button data-a="gold">⛏️ Gold</button>`;
+      }
+      html+=`<button data-a="stop">⏹ Stop</button>`;
+      html+=dockSpecial();
+      html+=`</div><div class="btnrow" data-pane="build" style="display:${forceBuild?'flex':'none'}">`;
+      for(const [k,b] of Object.entries(BUILDINGS)){ if(k==='townhall'||k==='farm'||k==='barracks'||k==='tower')continue; const c=`${Math.ceil((b.cost.gold||0)*fm.cost)}🪙 ${Math.ceil((b.cost.wood||0)*fm.cost)}🪵`; html+=`<button data-b="${k}">${b.icon} ${b.name}<br><small>${c} · ${b.time}s</small></button>`; }
       html+=`</div>`;
     }
   } else {
     const B=BUILDINGS[e.type];
-    html=`<h3>${B.icon} ${B.name} ${e.done?'':`(building ${((e.prog||0)*100)|0}%)`} ${e.owner===1?'(enemy)':''}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0}</p>`;
+    html=`<h3>${B.icon} ${B.name} ${e.done?'':`(building ${((e.prog||0)*100)|0}%)`} ${e.owner===1?'(enemy)':`<span class="fcap">${FACTIONS[coreFaction(st.playerFaction)].name}</span>`}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0}</p>`;
     if(e.owner===0&&e.done){
       const opts=trainableAt(e.type);
-      if(opts.length){ html+=`<div class="btnrow">`; for(const u of opts){ const U=UNITS[u]; const locked=u==='knight'&&!st.entities.some(x=>x.owner===0&&x.type==='blacksmith'&&x.done); html+=`<button data-u="${u}" ${locked?'disabled':''}>${U.icon} ${U.name}<br><small>${Math.ceil(U.cost.gold*fm.cost)}🪙 ${Math.ceil(U.cost.wood*fm.cost)}🪵 ${U.time}s</small></button>`; } html+=`</div>`;
+      if(opts.length){ html+=`<div class="btnrow dock-main">`; for(const u of opts){ const U=UNITS[u]; const lbl=u==='warrior'?'Train Melee':u==='archer'?'Train Ranged':U.name; const locked=u==='knight'&&!st.entities.some(x=>x.owner===0&&x.type==='blacksmith'&&x.done); html+=`<button data-u="${u}" ${locked?'disabled':''}>${U.icon} ${lbl}<br><small>${Math.ceil(U.cost.gold*fm.cost)}🪙 ${Math.ceil(U.cost.wood*fm.cost)}🪵 ${U.time}s</small></button>`; } html+=dockSpecial()+`</div>`;
         if(e.queue.length) html+=`<p>Training: ${e.queue.map(q=>UNITS[q].icon).join(' ')} ${(e.prog*100)|0}%</p>`; }
       if(e.type==='townhall') html+=`<p>Train Peasants to boom. Farms raise pop cap.</p>`;
     }
@@ -229,12 +281,20 @@ function renderSel(forceBuild=false){
   card.innerHTML=html;
   card.querySelectorAll('button').forEach(b=>b.onclick=()=>onCardBtn(b,e,forceBuild));
 }
+function dockSpecial(){
+  const sp=factionMult(coreFaction(st.playerFaction)).special;
+  if(!sp) return '';
+  const cd=Math.ceil((st.specialCd&&st.specialCd[0])||0);
+  const dis=cd>0||st.res[0].gold<(sp.cost.gold||0);
+  return `<button data-a="special" ${dis?'disabled':''}>${sp.icon} ${sp.name}<br><small>${cd>0?cd+'s':(sp.cost.gold||0)+'🪙'}</small></button>`;
+}
 function onCardBtn(b,e,forceBuild){
   const fm=factionMult(st.playerFaction);
   const a=b.dataset.a, u=b.dataset.u, bb=b.dataset.b;
   if(a==='stop'){ [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.cat==='unit')x.order={kind:'idle'};}); }
   if(a==='build'){ const p=cardPane(); if(p)p.style.display=p.style.display==='none'?'flex':'none'; }
   if(a==='wood'||a==='gold'){ const kind2=a==='gold'?'gold':'tree'; [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.type==='peasant'){const i=findResource(map,x.x,x.z,kind2,st); if(i>=0)orderGather(st,map,x,kind2,i);}}); sfx.move(); }
+  if(a==='special'){ toast(castSpecial(st,map,0)); sfx.build(); renderSel(); return; }
   if(a==='pause'){ paused=!paused; toast(paused?'⏸ Paused — SP safe. Tap Resume to continue.':'▶ Resumed'); renderSel(); }
   if(a==='save'){ saveGame(st,map); toast('💾 Saved to device'); }
   if(a==='menu'){ running=false; $('menu').style.display='flex'; renderFactions(); }
@@ -257,7 +317,7 @@ function onCardBtn(b,e,forceBuild){
         px*=0.9; pz*=0.9;
       }
     }
-    const nb=addEntity(st,{cat:'bld',type:bb,owner:0,x:px,z:pz,hp:1,maxHp:BUILDINGS[bb].hp*fm.hp,done:false,prog:0,time:BUILDINGS[bb].time/fm.build,builder:false,size:BUILDINGS[bb].size,sight:BUILDINGS[bb].sight,armor:1,queue:[],cool:0});
+    const nb=addEntity(st,{cat:'bld',type:bb,owner:0,f:st.playerFaction,x:px,z:pz,hp:1,maxHp:BUILDINGS[bb].hp*fm.hp,done:false,prog:0,time:BUILDINGS[bb].time/fm.build,builder:false,size:BUILDINGS[bb].size,sight:BUILDINGS[bb].sight,armor:1,queue:[],cool:0});
     peas.order={kind:'build',id:nb.id};
     sfx.build(); toast(`${BUILDINGS[bb].icon} ${BUILDINGS[bb].name} placed — peasant on the way!`);
     sel=new Set([nb.id]);
@@ -294,14 +354,19 @@ function loop(now){
   if(!paused&&!st.over){
     acc+=dt*st.speed;
     const STEP=0.1; let n=0;
-    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); }); acc-=STEP; n++;
+    while(acc>=STEP&&n<5){
+      tick(st,map,STEP);
       aiAcc+=STEP; if(aiAcc>2){aiAcc=0; if(!st.tutorial){try{aiTick(st,map);}catch(err){console.warn(err);}} }
+      st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); });
+      acc-=STEP; n++;
     }
     saveAcc+=dt; if(saveAcc>15){saveAcc=0; if(!st.tutorial)saveGame(st,map);}
     if(acc>STEP*5) acc=STEP*5;
   }
   renderer.sync(st,map,sel,time);
   hud();
+  perfFrames++; perfT+=dt;
+  if(perfT>=0.5){ if($('sandbox').style.display!=='none') $('perf').textContent=`${(perfFrames/perfT)|0} fps · ${renderer.renderer.info.render.calls} draw calls`; perfFrames=0; perfT=0; }
   selAcc+=dt; if(selAcc>=0.5){ selAcc=0; renderSelLive(); }
   // Mission 1 tutorial: evaluated after the sim step, no fail state, no AI.
   // The UI keeps refreshing after completion so the bar settles on "complete".
@@ -319,8 +384,7 @@ function loop(now){
   if(st.over&&!st._end&&!st.tutorial){ st._end=true; endGame(st.over.win,st.over.draw); }
 }
 function onMissionComplete(reward){
-  const prof=getProfile();
-  markMissionComplete(prof,MISSION1.id);
+  const prof=markMissionComplete(getProfile(),MISSION1.id);
   addAch(prof,reward.achievement);
   setProfile(prof);
   // Reward is real: it lands in the kingdom you carry into the battle.
@@ -333,7 +397,7 @@ function renderSelLive(){ // rebuild at ~1Hz only when something visible changed
   if($('selcard').style.display==='none'||!sel.size) return;
   const e=[...sel].map(id=>byId(st,id)).find(x=>x&&!x.dead);
   if(!e) return;
-  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),st.res[0].gold|0,st.res[0].wood|0,paused?'p':''].join('|');
+  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),st.res[0].gold|0,st.res[0].wood|0,Math.ceil((st.specialCd&&st.specialCd[0])||0),paused?'p':''].join('|');
   if(sig===lastSig) return; lastSig=sig;
   const paneOpen=!!document.querySelector('#selcard [data-pane="build"]')&&document.querySelector('#selcard [data-pane="build"]').style.display!=='none';
   renderSel(paneOpen);
@@ -360,7 +424,16 @@ window.__game={ get st(){return st;}, get map(){return map;}, get sel(){return s
 
 // ---- boot ----
 $('againBtn').onclick=()=>location.reload();
+$('sandboxBtn').onclick=()=>{ const p=$('sandbox'); p.style.display=p.style.display==='none'?'flex':'none'; };
+$('sbRes').onclick=()=>{ if(!st){toast('Start a game first');return;} st.res[0].gold+=500; st.res[0].wood+=500; toast('⚙️ +500🪙 +500🪵'); sfx.coin(); };
+$('sbWave').onclick=()=>{ if(!st||!running){toast('Start a game first');return;} const hall=st.entities.find(e=>!e.dead&&e.owner===0&&e.type==='townhall'); const hx=hall?hall.x:0,hz=hall?hall.z:0; const fm=factionMult(st.aiFaction);
+  for(let i=0;i<3;i++){ const w=addEntity(st,{cat:'unit',type:'warrior',owner:1,f:st.aiFaction,x:hx+14+i*2,z:hz+14,hp:150*fm.hp,maxHp:150*fm.hp,dmg:12,armor:1,speed:5.6,sight:10,order:null,carry:null,carryAmt:0,cool:0}); if(hall)orderAttack(st,w,hall.id); }
+  toast('⚙️ Enemy wave incoming!'); };
+$('sbFog').onclick=()=>{ if(!st){toast('Start a game first');return;} st.fog=!st.fog; toast(st.fog?'⚙️ Fog of war on':'⚙️ Fog of war off'); };
+$('sbSpeed').onclick=()=>{ if(!st){toast('Start a game first');return;} st.speed=st.speed>=2?1:2; $('sbSpeed').textContent=st.speed>=2?'1× Speed':'2× Speed'; toast(`⚙️ Speed ${st.speed}×`); };
 renderFactions();
+$('buildTag').textContent=`build ${BUILD}`;
+console.log('KINGDOMS RTS',BUILD);
 // Ambient demo scene behind menu so first paint is never black
 try{
   st=makeState({faction:'human',aiFaction:'undead',ai:'expander',fog:'off',speed:1});
@@ -369,6 +442,7 @@ try{
   spawnBase(st,map,1,30,30,'undead');
   updateFog(st,map);
   renderer=new Renderer(gl); renderer.buildStatic(map);
+  renderer.addBaseDecal(-30,-30,'human'); renderer.addBaseDecal(30,30,'undead');
   renderer.target.set(0,0,0); renderer.dist=85;
   const demoT0=performance.now();
   (function paint(){ if(!running){ const t=(performance.now()-demoT0)/1000;

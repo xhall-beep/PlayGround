@@ -1,5 +1,5 @@
 // AI: economy + scouting + expansion + army composition + attacks + defense + personality.
-import { alive, canAfford, pay, popCap } from '../core/engine.js';
+import { alive, canAfford, pay, popCap, srand } from '../core/engine.js';
 import { BUILDINGS, UNITS } from '../buildings/data.js';
 import { factionMult } from '../factions/factions.js';
 import { orderMove, orderAttack, orderGather, orderBuild, findResource, nearestHall, spawnBase } from '../sim/sim.js';
@@ -11,9 +11,9 @@ export const PERSONAS={
   expander:{name:'Expander',barracksAt:2,farms:3,warriors:10,attackAt:300,desc:'booms economy'},
 };
 
-export function aiTick(st,map){
-  const O=1; if(st.over) return;
-  const fm=factionMult(st.aiFaction);
+export function aiTick(st,map,owner=1){
+  const O=owner; if(st.over||st.tutorial) return;
+  const fm=factionMult(O===0?st.playerFaction:st.aiFaction);
   const peasants=st.entities.filter(e=>e.owner===O&&e.type==='peasant'&&alive(e));
   const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight')&&alive(e));
   const halls=st.entities.filter(e=>e.owner===O&&e.type==='townhall'&&alive(e));
@@ -47,8 +47,8 @@ export function aiTick(st,map){
   if(wantFarm)wish='farm'; else if(wantRax)wish='barracks'; else if(wantTower)wish='tower'; else if(wantArch)wish='archery'; else if(wantSmith)wish='blacksmith'; else if(nb('farm')<4&&st.t>240)wish='farm';
   if(wish&&inQueue()<2&&canAfford(st,O,BUILDINGS[wish].cost,fm)){
     pay(st,O,BUILDINGS[wish].cost,fm);
-    const a=Math.random()*6.28,dd=7+Math.random()*4;
-    const b=addEntity(st,{cat:'bld',type:wish,owner:O,x:clamp(hall.x+Math.cos(a)*dd),z:clamp(hall.z+Math.sin(a)*dd),hp:1,maxHp:BUILDINGS[wish].hp*fm.hp,done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
+    const a=srand(st)*6.28,dd=7+srand(st)*4;
+    const b=addEntity(st,{cat:'bld',type:wish,owner:O,f:st.aiFaction,x:clamp(hall.x+Math.cos(a)*dd),z:clamp(hall.z+Math.sin(a)*dd),hp:1,maxHp:BUILDINGS[wish].hp*fm.hp,done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
     const builder=peasants.find(p=>!p.building);
     if(builder) orderBuild(st,builder,b.id); else b.builder=true;
   }
@@ -61,20 +61,26 @@ export function aiTick(st,map){
   // 4) train army
   const rax=st.entities.find(e=>e.owner===O&&e.type==='barracks'&&e.done&&alive(e));
   if(rax&&rax.queue.length<2){
-    const comp = st.t>360&&Math.random()<0.3?'archer':'warrior';
+    const comp = st.t>360&&srand(st)<0.3?'archer':'warrior';
     if(usedPop(st,O)+(UNITS[comp].pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS[comp].cost,fm)&&army.length<14){pay(st,O,UNITS[comp].cost,fm);rax.queue.push(comp);}
   }
   const arch=st.entities.find(e=>e.owner===O&&e.type==='archery'&&e.done&&alive(e));
-  if(arch&&arch.queue.length<1&&army.length>6&&canAfford(st,O,UNITS.knight.cost,fm)){pay(st,O,UNITS.knight.cost,fm);arch.queue.push('knight');}
+  if(arch&&arch.queue.length<1&&army.length>6&&army.length<14&&usedPop(st,O)+(UNITS.knight.pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS.knight.cost,fm)){pay(st,O,UNITS.knight.cost,fm);arch.queue.push('knight');}
 
-  // 5) attack waves
+  // 5) attack waves — telegraphed: the player gets a toast before the push lands.
+  // Prefer the Town Hall (that's the win condition) and escalate past mid-game:
+  // a stale stalemate is the only way an AI-vs-AI match never resolves.
+  const FOE=1-O;
   const atkAt=P.attackAt||300;
-  if((st.t>atkAt&&army.length>=(P.warriors||8))||army.length>=12){
-    const foe=st.entities.find(e=>e.owner===0&&e.cat==='bld'&&alive(e));
-    if(foe) army.forEach((u,i)=>{ u.order={kind:'attackmove',x:foe.x+(i%4)*2,z:foe.z+Math.floor(i/4)*2,path:null,pi:0}; });
+  const late=Math.max(0,Math.floor((st.t-(atkAt+600))/120));
+  const eager=Math.max(4,(P.warriors||8)-late);
+  if(st.t>atkAt&&(army.length>=eager||army.length>=12||(st.t>atkAt+300&&army.length>=5))){
+    const foe=st.entities.find(e=>e.owner===FOE&&e.type==='townhall'&&alive(e))||st.entities.find(e=>e.owner===FOE&&e.cat==='bld'&&alive(e));
+    if(foe){ if(O===1&&st.t-(st._pushAt??-1e9)>90){ st._pushAt=st.t; st.events.push({t:'toast',msg:'⚔️ Enemy army is marching!'}); }
+      army.forEach((u,i)=>{ u.order={kind:'attackmove',x:foe.x+(i%4)*2,z:foe.z+Math.floor(i/4)*2,path:null,pi:0}; }); }
   }
   // 6) defense: if enemy near base, pull half army back
-  const invader=st.entities.find(e=>e.owner===0&&e.cat==='unit'&&alive(e)&&Math.hypot(e.x-hall.x,e.z-hall.z)<18);
+  const invader=st.entities.find(e=>e.owner===FOE&&e.cat==='unit'&&alive(e)&&Math.hypot(e.x-hall.x,e.z-hall.z)<18);
   if(invader){ army.slice(0,Math.ceil(army.length/2)).forEach(u=>{u.order={kind:'attack',id:invader.id};}); }
 }
 function usedPop(st,O){ return st.entities.filter(e=>e.owner===O&&e.cat==='unit'&&!e.dead).reduce((s,e)=>s+(UNITS[e.type].pop||1),0); }

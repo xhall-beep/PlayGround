@@ -1,103 +1,143 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-faction="human">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-<title>KINGDOMS RTS — Autumn Forest</title>
+<title>KINGDOMS RTS</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏰</text></svg>"/>
 <style>
-:root{--bg:#1a120b;--panel:#241a10ee;--gold:#f5b942;--wood:#8a5a2b;--green:#7fb069;--ink:#fff7e8}
+:root{--bg:#0f172a;--panel:#0f172aee;--texture:linear-gradient(rgba(226,232,240,.05),transparent 55%);--accent:#1d4ed8;--accent2:#60a5fa;--btn:#1e3a8a;--btn-ink:#ffffff;--border:#e2e8f055;--gold:#f5b942;--wood:#8a5a2b;--green:#7fb069;--ink:#f1f5f9;--glow:none}
+html[data-faction="human"]{--bg:#0f172a;--panel:#0f172aee;--texture:linear-gradient(rgba(226,232,240,.05),transparent 55%);--accent:#1d4ed8;--accent2:#60a5fa;--btn:#1e3a8a;--btn-ink:#ffffff;--border:#e2e8f077;--ink:#f1f5f9;--glow:0 0 14px #1d4ed866}
+html[data-faction="orc"]{--bg:#160c08;--panel:#241009f2;--texture:repeating-linear-gradient(45deg,rgba(0,0,0,.30) 0 6px,transparent 6px 12px);--accent:#991b1b;--accent2:#d97706;--btn:#991b1b;--btn-ink:#ffe8e8;--border:#d9770677;--ink:#f5e8dd;--glow:0 0 14px #991b1baa}
+html[data-faction="undead"]{--bg:#090d16;--panel:#0d1322f2;--texture:radial-gradient(circle at 18% 8%,rgba(168,85,247,.14),transparent 42%),radial-gradient(circle at 85% 92%,rgba(16,185,129,.12),transparent 46%);--accent:#10b981;--accent2:#a855f7;--btn:#1f2b3d;--btn-ink:#e7e5e4;--border:#d6d3d144;--ink:#d6d3d1;--glow:0 0 16px #10b98166,0 0 26px #a855f744}
+html[data-faction="elf"]{--bg:#07130e;--panel:#0a2016f2;--texture:repeating-linear-gradient(-45deg,rgba(251,191,36,.06) 0 4px,transparent 4px 10px);--accent:#059669;--accent2:#fbbf24;--btn:#065f46;--btn-ink:#fff8e6;--border:#fbbf2455;--ink:#eef7ee;--glow:0 0 14px #05966977}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overscroll-behavior:none}
 #app{position:fixed;inset:0;display:flex;flex-direction:column}
-#topbar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:linear-gradient(#2e2113,#241a10);border-bottom:1px solid #4a3020;z-index:5;font-size:14px;flex-wrap:wrap}
-.pill{background:#0008;border:1px solid #ffffff22;border-radius:999px;padding:4px 10px;white-space:nowrap}
-.pill b{color:var(--gold)}
+#topbar{position:relative;display:flex;gap:8px;align-items:center;padding:8px 34px 8px 34px;background-color:var(--panel);background-image:var(--texture);border-bottom:2px solid var(--accent);box-shadow:var(--glow);z-index:5;font-size:14px;flex-wrap:wrap}
+.pill{background:#0009;border:1px solid var(--border);border-radius:999px;padding:4px 10px;white-space:nowrap}
+.pill b{color:var(--accent2)}
 #timer{margin-left:auto;opacity:.8}
+#sandboxBtn{margin-left:4px;border-radius:999px;padding:4px 10px}
+#sandbox{position:absolute;top:46px;right:8px;z-index:9;display:none;flex-direction:column;gap:6px;background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);box-shadow:var(--glow);border-radius:12px;padding:8px;min-width:170px}
+#sandbox button{text-align:left;font-size:12px}
+#perf{font-size:11px;opacity:.75;text-align:left;padding:0 2px;font-family:ui-monospace,monospace}
+#errbox{display:none;position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#2a0d0d;color:#ffd9d9;border:1px solid #a33;border-radius:10px;padding:8px 10px;font-size:12px;text-align:left}
+#errbox b{display:block;margin-bottom:2px}
+#errmsg{font-family:ui-monospace,monospace;font-size:11px;white-space:pre-wrap;max-height:120px;overflow:auto}
+#errclose{margin-top:6px}
 #view{position:relative;flex:1;overflow:hidden;touch-action:none;background:#0e0a06}
 #gl{position:absolute;inset:0}
 #gl canvas{display:block}
 #minimap{position:absolute;right:8px;bottom:8px;width:132px;height:132px;border:2px solid #ffffff33;border-radius:10px;background:#000c;z-index:4}
-#selcard{position:absolute;left:8px;bottom:8px;max-width:min(72vw,340px);background:var(--panel);border:1px solid #ffffff22;border-radius:12px;padding:10px;z-index:4;backdrop-filter:blur(6px)}
+#selcard{position:absolute;left:8px;right:148px;bottom:8px;background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:14px;padding:10px;z-index:4;backdrop-filter:blur(6px);box-shadow:var(--glow)}
 #selcard h3{margin:0 0 4px;font-size:15px}
+#selcard h3 .fcap{font-size:11px;opacity:.75;font-weight:400}
 #selcard p{margin:2px 0;font-size:12px;opacity:.9}
 .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-button{background:#3a2a16;color:var(--ink);border:1px solid #ffffff2e;border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700}
+.dock-main button{flex:1 1 30%;min-height:48px;font-size:12px}
+button{background:var(--btn);color:var(--btn-ink);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700}
 button:active{transform:scale(.97)}
-button.primary{background:linear-gradient(#ffcf6b,#e89b2e);color:#241505;border:none}
+button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;text-shadow:0 1px 2px #0009;border:none}
 button.danger{background:#6e1f1f}
 button:disabled{opacity:.4}
 #toolbar{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;display:none}
-#menu{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,#4a2f14 0%,#1a120b 70%);padding:16px}
-.card{background:var(--panel);border:1px solid #ffffff2a;border-radius:18px;padding:20px;max-width:560px;width:100%;box-shadow:0 20px 60px #000a;max-height:92vh;overflow:auto}
-.card h1{margin:0;font-size:26px;letter-spacing:.5px}
-.card h1 span{color:var(--gold)}
+#menu{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,#ffffff14 0%,var(--bg) 72%);padding:16px}
+.card{position:relative;background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);border-radius:18px;padding:20px;max-width:560px;width:100%;box-shadow:0 20px 60px #000a,var(--glow);max-height:92vh;overflow:auto}
+.card h1{margin:0;font-size:26px;letter-spacing:2px}
+.card h1 span{color:var(--accent2)}
 .card .sub{opacity:.85;font-size:13px;margin:6px 0 12px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.faction{border:2px solid #ffffff22;border-radius:12px;padding:8px;cursor:pointer;font-size:12px;background:#0006}
-.faction.sel{border-color:var(--gold);background:#3a2a1666}
+.faction{border:2px solid var(--border);border-radius:12px;padding:8px;cursor:pointer;font-size:12px;background:#0006}
+.faction.sel{border-color:var(--accent);box-shadow:var(--glow)}
 .faction b{display:block;font-size:13px}
+.faction i{display:block;font-size:11px;font-style:normal;opacity:.7;margin:1px 0 3px;color:var(--accent2)}
+#expansionRow{grid-column:1/-1;border:2px dashed var(--border);border-radius:12px;padding:8px;font-size:12px;background:#0006;opacity:.75;cursor:pointer}
+#expansionRow b{display:block;font-size:12px}
+#expansionRow span{opacity:.85}
+.cnr{position:absolute;width:26px;height:26px;pointer-events:none;opacity:.95;z-index:6}
+.cnr svg{width:100%;height:100%;display:block}
+.cnr.tl{top:4px;left:4px}
+.cnr.tr{top:4px;right:4px;transform:scaleX(-1)}
+.cnr.bl{bottom:4px;left:4px;transform:scaleY(-1)}
+.cnr.br{bottom:4px;right:4px;transform:scale(-1,-1)}
 label.row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin:8px 0;background:#0005;padding:8px 10px;border-radius:10px}
 select,input[type=range]{accent-color:var(--gold)}
-#toast{position:absolute;top:52px;left:50%;transform:translateX(-50%);background:#000d;border:1px solid #ffffff33;padding:8px 14px;border-radius:999px;font-size:13px;z-index:6;display:none}
+#notices{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;z-index:7;width:max-content;max-width:94vw;pointer-events:none}
+#notices>*{pointer-events:auto}
+body.tut #notices{top:132px}
+#toast{background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);box-shadow:var(--glow);padding:8px 14px;border-radius:999px;font-size:13px;display:none;max-width:94vw}
+#tut-coach{display:none}
 #endcard{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:9;background:#000a}
 #hint{position:absolute;top:52px;left:8px;font-size:11px;background:#0009;padding:6px 9px;border-radius:8px;z-index:4;max-width:60vw}
 kbd{background:#fff2;border-radius:4px;padding:0 5px}
 /* --- Mission 1 tutorial chrome --- */
-#tutbar{position:absolute;top:8px;left:8px;right:8px;display:none;z-index:7;background:var(--panel);border:2px solid var(--gold);border-radius:14px;padding:10px 12px;backdrop-filter:blur(6px)}
+#tutbar{position:absolute;top:8px;left:8px;right:8px;display:none;z-index:7;background-color:var(--panel);background-image:var(--texture);border:2px solid var(--accent);box-shadow:var(--glow);border-radius:14px;padding:10px 12px;backdrop-filter:blur(6px)}
 #tut-counter{font-size:10px;letter-spacing:1.2px;opacity:.85;text-transform:uppercase}
-#tut-step{font-size:17px;font-weight:800;color:var(--gold);margin-top:2px}
+#tut-step{font-size:17px;font-weight:800;color:var(--accent2);margin-top:2px}
 #tut-sub{font-size:12px;opacity:.92;margin-top:2px}
 #tut-track{height:7px;background:#0007;border-radius:99px;overflow:hidden;margin-top:8px}
-#tut-fill{height:100%;width:0%;background:linear-gradient(90deg,#ffd75e,#ff9d2e);border-radius:99px;transition:width .3s}
+#tut-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;transition:width .3s}
 #tut-skip{position:absolute;top:8px;right:8px;background:#0006;border:1px solid #fff3;color:#fff;font-size:11px;padding:4px 10px;border-radius:99px}
-#tut-coach{position:absolute;left:50%;transform:translateX(-50%);top:104px;z-index:7;background:#fff2;border:2px solid var(--gold);color:#2b1a06;border-radius:14px;padding:10px 14px;font-size:13px;font-weight:700;max-width:88vw;text-align:center;box-shadow:0 6px 20px #0007}
-#tut-coach::after{content:'';position:absolute;bottom:-10px;left:50%;margin-left:-8px;border:8px solid transparent;border-top-color:var(--gold)}
-body.tut #toast{top:auto;bottom:18px}
+#tut-coach{background-color:var(--panel);background-image:var(--texture);border:2px solid var(--accent);box-shadow:var(--glow);color:var(--ink);border-radius:14px;padding:10px 14px;font-size:13px;font-weight:700;max-width:88vw;text-align:center}
 #tut-done{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000a;z-index:8}
 #tut-done .card{text-align:center;max-width:380px}
-@media (max-width:640px){#hint{display:none}#selcard{font-size:12px}#tut-step{font-size:15px}}
-@media (max-height:560px){#tut-coach{top:70px;font-size:12px;padding:7px 11px}#tutbar{padding:6px 10px}#tut-step{font-size:14px}#tut-counter{font-size:9px}#tut-track{margin-top:5px;height:6px}#selcard{max-width:min(50vw,300px);padding:8px}}
+@media (max-width:640px){#hint{display:none}#selcard{font-size:12px;right:108px}#minimap{width:92px;height:92px}#tut-step{font-size:15px}body.tut #notices{top:124px}}
+@media (max-height:560px){#tut-coach{font-size:12px;padding:7px 11px}#tutbar{padding:6px 10px}#tut-step{font-size:14px}#tut-counter{font-size:9px}#tut-track{margin-top:5px;height:6px}#selcard{padding:8px}body.tut #notices{top:104px}}
 </style>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
 </head>
 <body>
 <div id="app">
   <div id="topbar">
+    <i class="cnr tl"></i><i class="cnr tr"></i>
     <span class="pill">🪙 <b id="r-gold">0</b></span>
     <span class="pill">🪵 <b id="r-wood">0</b></span>
     <span class="pill">🍏 <b id="r-food">0</b></span>
     <span class="pill">🏠 <b id="r-pop">0/0</b></span>
     <span class="pill">⚔️ <b id="r-army">0</b></span>
     <span id="timer">00:00</span>
+    <button id="sandboxBtn" title="Sandbox tools">⚙️</button>
+    <div id="sandbox" style="display:none">
+      <div id="perf">– fps · – calls</div>
+      <button id="sbRes">⚙️ +500 All Resources</button>
+      <button id="sbWave">⚙️ Spawn Enemy Wave</button>
+      <button id="sbFog">⚙️ Toggle Fog</button>
+      <button id="sbSpeed">⚙️ 2× Speed</button>
+    </div>
   </div>
   <div id="view">
     <div id="gl"></div>
     <canvas id="minimap" width="132" height="132"></canvas>
     <div id="selcard" style="display:none"></div>
     <div id="hint">Tap: select / order &nbsp;•&nbsp; Drag: pan &nbsp;•&nbsp; Pinch: zoom &nbsp;•&nbsp; Long-press: build</div>
-    <div id="toast"></div>
+    <div id="notices">
+      <div id="tut-coach"><span id="tut-coach-text">Tap the glowing peasant.</span></div>
+      <div id="toast"></div>
+    </div>
     <div id="tutbar">
+      <i class="cnr tl"></i><i class="cnr tr"></i>
       <button id="tut-skip">Skip tutorial</button>
       <div id="tut-counter">MISSION 1 · First Harvest</div>
       <div id="tut-step">Chop wood</div>
       <div id="tut-sub">0/120 wood</div>
       <div id="tut-track"><div id="tut-fill"></div></div>
     </div>
-    <div id="tut-coach"><span id="tut-coach-text">Tap the glowing peasant.</span></div>
     <div id="tut-done"><div class="card">
+      <i class="cnr tl"></i><i class="cnr tr"></i><i class="cnr bl"></i><i class="cnr br"></i>
       <h1>🌾 <span>Mission 1</span> complete!</h1>
       <div class="sub" id="tut-done-sub"></div>
       <div class="sub">You can now gather, build, and train. The full battle against another kingdom is next.</div>
       <div class="btnrow"><button class="primary" id="tut-done-go" style="flex:1">Continue to battle</button></div>
     </div></div>
     <div id="menu"><div class="card">
-      <h1>KINGDOMS <span>en Guerre</span></h1>
-      <div class="sub">🍂 Autumn-forest mobile RTS • Town Hall → Farms → Barracks → destroy the enemy Town Hall. Tap to select, tap ground to move, tap enemy to attack.</div>
+      <i class="cnr tl"></i><i class="cnr tr"></i><i class="cnr bl"></i><i class="cnr br"></i>
+      <h1>KINGDOMS <span>RTS</span></h1>
+      <div class="sub">🌲 Lush-forest mobile RTS • Town Hall → Farms → Barracks → destroy the enemy Town Hall. Tap to select, tap ground to move, tap enemy to attack.</div>
       <div class="sub"><b>Mission 1 — First Harvest:</b> a guided tutorial with no enemies and no fail state. Learn to gather, build, and train.</div>
       <div class="btnrow"><button class="primary" id="mission1Btn" style="flex:1">▶ Mission 1 · Tutorial</button></div>
       <div class="sub" style="margin-top:6px">Or jump straight into a battle:</div>
-      <b style="font-size:13px">Choose faction (Human fully playable; others remix stats)</b>
+      <b style="font-size:13px">Choose your faction — stats, architecture, specials and the whole UI follow</b>
       <div class="grid2" id="factions"></div>
       <label class="row">AI personality
         <select id="ai"><option value="aggressor">🔥 Aggressor — early pressure</option><option value="turtle">🛡️ Defender — turtles</option><option value="expander" selected>🌲 Expander — booms</option></select>
@@ -111,11 +151,12 @@ body.tut #toast{top:auto;bottom:18px}
       </div>
       <div class="btnrow"><button id="helpBtn" style="flex:1">How to play</button><button id="wipeBtn">Wipe save</button></div>
       <div class="sub" id="profileLine" style="margin-top:10px"></div>
-      <div class="sub">Systems: Core Engine · World · Economy · Military · 8 Factions · Buildings · AI · Chibi 3D · Campaign/Meta. Saves to device. Pause anytime (SP-safe).</div>
+      <div class="sub">Systems: Core Engine · World · Economy · Military · 4 Factions · Buildings · AI · Chibi 3D · Campaign/Meta. Saves to device. Pause anytime (SP-safe). <span id="buildTag"></span></div>
     </div></div>
-    <div id="endcard"><div class="card" style="text-align:center"><h1 id="endTitle">Victory!</h1><div class="sub" id="endSub"></div><div class="btnrow"><button class="primary" id="againBtn" style="flex:1">Play again</button><button id="menuBtn">Menu</button></div></div></div>
+    <div id="endcard"><div class="card" style="text-align:center"><i class="cnr tl"></i><i class="cnr tr"></i><i class="cnr bl"></i><i class="cnr br"></i><h1 id="endTitle">Victory!</h1><div class="sub" id="endSub"></div><div class="btnrow"><button class="primary" id="againBtn" style="flex:1">Play again</button><button id="menuBtn">Menu</button></div></div></div>
   </div>
 </div>
+<div id="errbox"><b>⚠️ Something broke</b><div id="errmsg"></div><button id="errclose">Dismiss</button></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

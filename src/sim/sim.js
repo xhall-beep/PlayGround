@@ -1,20 +1,43 @@
 // Simulation tick: economy (gather/build/produce), military (combat/projectiles), orders, navigation.
 import { addEntity, byId, alive, dist, eachNear, dealDamage, popCap, pay, canAfford, w2g, WORLD } from '../core/engine.js';
 import { BUILDINGS, UNITS, trainableAt } from '../buildings/data.js';
-import { factionMult } from '../factions/factions.js';
+import { factionMult, coreFaction } from '../factions/factions.js';
 import { findPath, buildBlocked, updateFog } from '../world/world.js';
 
 export function spawnBase(st,map,owner,fx,fz,faction){
   const fm=factionMult(faction);
-  const th=addEntity(st,{cat:'bld',type:'townhall',owner,x:fx,z:fz,hp:1600*fm.hp,maxHp:1600*fm.hp,done:true,size:3.4,sight:12,armor:2,queue:[],prog:0});
-  for(let i=0;i<2;i++) addEntity(st,{cat:'unit',type:'peasant',owner,x:fx+4+i*2.5,z:fz+4,hp:70*fm.hp,maxHp:70*fm.hp,dmg:4,armor:0,speed:5.2,sight:9,order:null,carry:null,carryAmt:0,cool:0});
+  const th=addEntity(st,{cat:'bld',type:'townhall',owner,f:faction,x:fx,z:fz,hp:1600*fm.hp,maxHp:1600*fm.hp,done:true,size:3.4,sight:12,armor:2,queue:[],prog:0});
+  for(let i=0;i<2;i++) addEntity(st,{cat:'unit',type:'peasant',owner,f:faction,x:fx+4+i*2.5,z:fz+4,hp:70*fm.hp,maxHp:70*fm.hp,dmg:4,armor:0,speed:5.2,sight:9,order:null,carry:null,carryAmt:0,cool:0});
   return th;
 }
+
+export function castSpecial(st,map,owner){
+  const fkey=coreFaction(owner===0?st.playerFaction:st.aiFaction);
+  const sp=factionMult(fkey).special;
+  if(!sp) return 'No special for this faction';
+  const cd=st.specialCd||(st.specialCd=[0,0]);
+  if(cd[owner]>0) return `${sp.name} recharging (${Math.ceil(cd[owner])}s)`;
+  if(st.res[owner].gold<(sp.cost.gold||0)) return `Need ${sp.cost.gold}🪙 for ${sp.name}`;
+  st.res[owner].gold-=sp.cost.gold||0; cd[owner]=sp.cd||60;
+  const mine=st.entities.filter(e=>!e.dead&&e.owner===owner&&e.cat==='unit');
+  const heal=n=>{ for(const u of mine) u.hp=Math.min(u.maxHp,u.hp+n); };
+  if(fkey==='human'){ heal(40); return `🛡️ ${sp.name}! Army rallied (+40 HP).`; }
+  if(fkey==='orc'){ for(const u of mine){ if(u.type!=='peasant')u.dmg+=3; } heal(25); return `🩸 ${sp.name}! +3 damage, +25 HP.`; }
+  if(fkey==='undead'){
+    const anchor=nearestHall(st,owner,0,0)||mine[0]||{x:0,z:0};
+    const f=fmOf(st,owner);
+    for(let i=0;i<2;i++) addEntity(st,{cat:'unit',type:'warrior',owner,f:fkey,x:anchor.x+2+i*2,z:anchor.z+2,hp:UNITS.warrior.hp*f.hp*0.6,maxHp:UNITS.warrior.hp*f.hp*0.6,dmg:UNITS.warrior.dmg*f.dmg,armor:0,speed:UNITS.warrior.speed,sight:9,order:null,carry:null,carryAmt:0,cool:0});
+    return `💀 ${sp.name}! Two skeletons rise.`;
+  }
+  heal(60); return `🌙 ${sp.name}! +60 HP to your army.`;
+}
+function fmOf(st,owner){ return factionMult(owner===0?st.playerFaction:st.aiFaction); }
 
 let blockedCache=null, blockedTick=-1;
 export function tick(st,map,dt){
   st.events=[];
   st.t+=dt; st.tick++;
+  if(st.specialCd) for(let o=0;o<2;o++) if(st.specialCd[o]>0) st.specialCd[o]=Math.max(0,st.specialCd[o]-dt);
   const fm=[factionMult(st.playerFaction),factionMult(st.aiFaction)];
   if(st.tick%20===0) updateFog(st,map);
   if(blockedTick!==st.tick){ blockedCache=buildBlocked(st,map); blockedTick=st.tick; }
@@ -33,7 +56,8 @@ export function tick(st,map,dt){
         const u=e.queue[0]; e.prog+=dt/UNITS[u].time;
         if(e.prog>=1){ e.queue.shift(); e.prog=0;
           const f=fm[e.owner];
-          addEntity(st,{cat:'unit',type:u,owner:e.owner,x:e.x+2.5,z:e.z+2.5,hp:UNITS[u].hp*f.hp,maxHp:UNITS[u].hp*f.hp,dmg:UNITS[u].dmg*(u==='archer'?(f.archer??f.dmg):f.dmg)*(e.buffDmg||1),armor:UNITS[u].armor,speed:UNITS[u].speed*f.speed,sight:UNITS[u].sight,order:null,carry:null,carryAmt:0,cool:0});
+          const nu=addEntity(st,{cat:'unit',type:u,owner:e.owner,f:e.owner===0?st.playerFaction:st.aiFaction,x:e.x+2.5,z:e.z+2.5,hp:UNITS[u].hp*f.hp,maxHp:UNITS[u].hp*f.hp,dmg:UNITS[u].dmg*(u==='archer'?(f.archer??f.dmg):f.dmg)*(e.buffDmg||1),armor:UNITS[u].armor,speed:UNITS[u].speed*f.speed,sight:UNITS[u].sight,order:null,carry:null,carryAmt:0,cool:0});
+          if(e.rally) orderMove(st,nu,e.rally.x,e.rally.z,false);
         }
       }
       // tower shooting
@@ -53,6 +77,27 @@ export function tick(st,map,dt){
       } else e.idleT=0;
     }
   }
+  // crowd separation: nudge stacked units apart so armies never share one pixel.
+  // Pushes are accumulated then capped per unit per tick, otherwise a dense blob
+  // cancels its own advance and melee armies jam just out of range forever.
+  const crowd=st.entities.filter(e=>!e.dead&&e.cat==='unit');
+  const push=new Map();
+  for(let i=0;i<crowd.length;i++){ const a=crowd[i];
+    for(let j=i+1;j<crowd.length;j++){ const b=crowd[j];
+      const dx=b.x-a.x,dz=b.z-a.z,d2=dx*dx+dz*dz;
+      if(d2<0.81){ let nx,nz,d;
+        if(d2>1e-6){ d=Math.sqrt(d2); nx=dx/d; nz=dz/d; }
+        else { const s=((a.id+b.id)%2?1:-1); nx=s; nz=0; d=0; }
+        const f=(0.9-d)*0.5;
+        const pa=push.get(a.id)||{x:0,z:0}, pb=push.get(b.id)||{x:0,z:0};
+        pa.x-=nx*f; pa.z-=nz*f; pb.x+=nx*f; pb.z+=nz*f;
+        push.set(a.id,pa); push.set(b.id,pb); }
+    }
+  }
+  const CAP=0.22;
+  for(const e of crowd){ const p=push.get(e.id); if(!p)continue;
+    const m=Math.hypot(p.x,p.z); const s=m>CAP?CAP/m:1;
+    e.x+=p.x*s; e.z+=p.z*s; }
   // projectiles
   for(const e of st.entities){
     if(e.cat!=='proj'||e.dead)continue;
@@ -108,9 +153,11 @@ function updateUnit(st,map,e,dt,fm,blocked){
         e.face=tgt;
       }
     } else {
-      o.path=null; const tmp={kind:'move',x:tgt.x,z:tgt.z,path:null,pi:0,chase:true};
-      if(!tmp.path) tmp.path=findPath(w2g(e.x),w2g(e.z),w2g(tgt.x),w2g(tgt.z),blocked)||[{x:tgt.x,z:tgt.z}];
-      const wp=tmp.path[0]; if(wp) moveToward(e,wp,dt);
+      const path=findPath(w2g(e.x),w2g(e.z),w2g(tgt.x),w2g(tgt.z),blocked)||[{x:tgt.x,z:tgt.z}];
+      const wp=path[0];
+      // waypoint reached (usually own cell center) → steer straight at the target,
+      // otherwise units park out of range forever
+      if(!wp||moveToward(e,wp,dt)) moveToward(e,tgt,dt);
       if(Math.hypot(tgt.x-e.x,tgt.z-e.z)>range+14) e.order={kind:'idle'};
     }
     return;
@@ -176,5 +223,5 @@ export function nearestHall(st,owner,x,z){
   return best;
 }
 export function fireProjectile(st,src,tgt,dmg){
-  st.entities.push({id:(Math.random()*1e9)|0,cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2});
+  addEntity(st,{cat:'proj',owner:src.owner,f:src.f||(src.owner===0?st.playerFaction:st.aiFaction),x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2});
 }
