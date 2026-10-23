@@ -14,9 +14,10 @@ export function genMap(seed){
   }
   const spots=[[-14,-6],[6,14],[-4,18],[16,-10],[-20,14],[12,4]];
   for(const [sx,sz] of spots){ for(let k=0;k<2;k++) gold.push({x:sx+(rnd()*6-3),z:sz+(rnd()*6-3),amount:600}); }
-  // near-base wood + gold
-  for(let k=0;k<8;k++) trees.push({x:baseA.x+(rnd()*14-7),z:baseA.z+(rnd()*14-7),amount:120});
-  for(let k=0;k<8;k++) trees.push({x:baseB.x+(rnd()*14-7),z:baseB.z+(rnd()*14-7),amount:120});
+  // near-base wood + gold — offsets are mirrored so both economies start equal
+  for(let k=0;k<8;k++){ const ox=rnd()*14-7, oz=rnd()*14-7;
+    trees.push({x:baseA.x+ox,z:baseA.z+oz,amount:120});
+    trees.push({x:baseB.x-ox,z:baseB.z-oz,amount:120}); }
   gold.push({x:baseA.x+7,z:baseA.z+3,amount:800},{x:baseB.x-7,z:baseB.z-3,amount:800});
   // fog grids
   const explored=[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)];

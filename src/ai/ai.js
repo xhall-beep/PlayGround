@@ -15,7 +15,7 @@ export function aiTick(st,map,owner=1){
   const O=owner; if(st.over||st.tutorial) return;
   const fm=factionMult(O===0?st.playerFaction:st.aiFaction);
   const peasants=st.entities.filter(e=>e.owner===O&&e.type==='peasant'&&alive(e));
-  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight')&&alive(e));
+  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='mage'||e.type==='knight')&&alive(e));
   const halls=st.entities.filter(e=>e.owner===O&&e.type==='townhall'&&alive(e));
   if(!halls.length) return;
   const hall=halls[0];
@@ -43,12 +43,22 @@ export function aiTick(st,map,owner=1){
   const wantTower=nb('tower')<(P.towers??(st.aiPersona==='turtle'?3:1)) && nb('barracks')>=1;
   const wantSmith=nb('blacksmith')<1 && st.t>300;
   const wantArch=nb('archery')<1 && st.t>360;
+  const wantMage=st.entities.filter(e=>e.owner===O&&e.cat==='bld'&&e.type==='mage'&&alive(e)).length<1 && st.t>420;
+  const wantExpand=nb('townhall')<2 && st.t>420 && nb('farm')>=3 && st.res[O].gold>300;
   let wish=null;
-  if(wantFarm)wish='farm'; else if(wantRax)wish='barracks'; else if(wantTower)wish='tower'; else if(wantArch)wish='archery'; else if(wantSmith)wish='blacksmith'; else if(nb('farm')<4&&st.t>240)wish='farm';
+  if(wantFarm)wish='farm'; else if(wantRax)wish='barracks'; else if(wantTower)wish='tower'; else if(wantArch)wish='archery'; else if(wantSmith)wish='blacksmith'; else if(wantMage)wish='mage'; else if(wantExpand)wish='townhall'; else if(nb('farm')<4&&st.t>240)wish='farm';
   if(wish&&inQueue()<2&&canAfford(st,O,BUILDINGS[wish].cost,fm)){
     pay(st,O,BUILDINGS[wish].cost,fm);
-    const a=srand(st)*6.28,dd=7+srand(st)*4;
-    const b=addEntity(st,{cat:'bld',type:wish,owner:O,f:st.aiFaction,x:clamp(hall.x+Math.cos(a)*dd),z:clamp(hall.z+Math.sin(a)*dd),hp:1,maxHp:BUILDINGS[wish].hp*fm.hp,done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
+    let px,pz;
+    if(wish==='townhall'){ // expansion: settle a neutral gold vein away from the enemy base
+      const eh=st.entities.find(e=>e.owner!==O&&e.cat==='bld'&&e.type==='townhall'&&alive(e));
+      let best=null,bd=-1;
+      for(const g of map.gold){ if(g.amount<=0)continue; if(eh&&Math.hypot(g.x-eh.x,g.z-eh.z)<20)continue;
+        const d=Math.hypot(g.x-hall.x,g.z-hall.z); if(d>bd){bd=d;best=g;} }
+      if(best){ px=clamp(best.x+3); pz=clamp(best.z+3); }
+    }
+    if(px===undefined){ const a=srand(st)*6.28,dd=7+srand(st)*4; px=clamp(hall.x+Math.cos(a)*dd); pz=clamp(hall.z+Math.sin(a)*dd); }
+    const b=addEntity(st,{cat:'bld',type:wish,owner:O,f:st.aiFaction,x:px,z:pz,hp:1,maxHp:BUILDINGS[wish].hp*fm.hp,done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
     const builder=peasants.find(p=>!p.building);
     if(builder) orderBuild(st,builder,b.id); else b.builder=true;
   }
@@ -58,14 +68,18 @@ export function aiTick(st,map,owner=1){
     if(free) orderBuild(st,free,b.id);
   }
 
-  // 4) train army
+  // 4) train army — keep 2 slots for mages once the Mage Tower stands
+  const mageB=st.entities.find(e=>e.owner===O&&e.cat==='bld'&&e.type==='mage'&&e.done&&alive(e));
+  const magi=army.filter(u=>u.type==='mage').length;
   const rax=st.entities.find(e=>e.owner===O&&e.type==='barracks'&&e.done&&alive(e));
   if(rax&&rax.queue.length<2){
     const comp = st.t>360&&srand(st)<0.3?'archer':'warrior';
-    if(usedPop(st,O)+(UNITS[comp].pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS[comp].cost,fm)&&army.length<14){pay(st,O,UNITS[comp].cost,fm);rax.queue.push(comp);}
+    const cap = mageB?12:14;
+    if(usedPop(st,O)+(UNITS[comp].pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS[comp].cost,fm)&&army.length<cap){pay(st,O,UNITS[comp].cost,fm);rax.queue.push(comp);}
   }
   const arch=st.entities.find(e=>e.owner===O&&e.type==='archery'&&e.done&&alive(e));
   if(arch&&arch.queue.length<1&&army.length>6&&army.length<14&&usedPop(st,O)+(UNITS.knight.pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS.knight.cost,fm)){pay(st,O,UNITS.knight.cost,fm);arch.queue.push('knight');}
+  if(mageB&&mageB.queue.length<1&&magi<2&&usedPop(st,O)+(UNITS.mage.pop||1)<=popCap(st,O)&&canAfford(st,O,UNITS.mage.cost,fm)){pay(st,O,UNITS.mage.cost,fm);mageB.queue.push('mage');}
 
   // 5) attack waves — telegraphed: the player gets a toast before the push lands.
   // Prefer the Town Hall (that's the win condition) and escalate past mid-game:

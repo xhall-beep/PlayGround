@@ -106,7 +106,10 @@ export function tick(st,map,dt){
     if(!tgt||tgt.dead||e.life<=0){e.dead=true;continue;}
     const dx=tgt.x-e.x,dz=tgt.z-e.z,d=Math.hypot(dx,dz);
     const sp=22*dt;
-    if(d<0.8){ dealDamage(st,e,tgt,e.dmg); e.dead=true; spawnHit(st,tgt.x,tgt.z); }
+    if(d<0.8){ dealDamage(st,e,tgt,e.dmg); spawnHit(st,tgt.x,tgt.z);
+      if(e.splash>0){ for(const u of st.entities){ if(u.dead||u===tgt||u.owner===e.owner||u.cat==='proj'||u.cat==='res')continue;
+        if(Math.hypot(u.x-tgt.x,u.z-tgt.z)<=e.splash) dealDamage(st,e,u,Math.round(e.dmg*0.6)); } }
+      e.dead=true; }
     else { e.x+=dx/d*sp; e.z+=dz/d*sp; }
   }
   st.entities=st.entities.filter(e=>!e.dead||(e.deathT??0)>0);
@@ -127,8 +130,8 @@ function nearestEnemy(st,e,range,owner){
 function updateUnit(st,map,e,dt,fm,blocked){
   const o=e.order;
   // auto-acquire for military
-  if((e.type==='warrior'||e.type==='archer'||e.type==='knight')&&(!o||o.kind==='move'||o.kind==='idle')){
-    if(e.cool<=0){ const tgt=nearestEnemy(st,e,e.type==='archer'?9:4,e.owner); if(tgt){ e.order={kind:'attack',id:tgt.id}; } }
+  if((e.type==='warrior'||e.type==='archer'||e.type==='mage'||e.type==='knight')&&(!o||o.kind==='move'||o.kind==='idle')){
+    if(e.cool<=0){ const tgt=nearestEnemy(st,e,Math.max(4,UNITS[e.type].range||4),e.owner); if(tgt){ e.order={kind:'attack',id:tgt.id}; } }
   }
   if(!o){ e.order={kind:'idle'}; return; }
   if(o.kind==='idle')return;
@@ -137,18 +140,19 @@ function updateUnit(st,map,e,dt,fm,blocked){
     const wp=o.path[o.pi];
     if(!wp){e.order={kind:'idle'};return;}
     if(moveToward(e,wp,dt)){ o.pi++; if(o.pi>=o.path.length){e.order={kind:'idle'};} }
-    if(o.kind==='attackmove'&&e.cool<=0){ const tgt=nearestEnemy(st,e,7,e.owner); if(tgt){e.order={kind:'attack',id:tgt.id};return;} }
+    if(o.kind==='attackmove'&&e.cool<=0){ const tgt=nearestEnemy(st,e,7,e.owner); if(tgt){e.am={x:o.x,z:o.z};e.order={kind:'attack',id:tgt.id};return;} }
     return;
   }
   if(o.kind==='attack'){
     const tgt=byId(st,o.id);
-    if(!tgt||tgt.dead){e.order={kind:'idle'};return;}
+    if(!tgt||tgt.dead){ if(e.am){ const {x,z}=e.am; e.am=null; e.order={kind:'attackmove',x,z,path:null,pi:0}; } else e.order={kind:'idle'}; return; }
     const range=(UNITS[e.type].range||1.6);
     const d=Math.hypot(tgt.x-e.x,tgt.z-e.z);
     if(d<=range){
       if(e.cool<=0){
-        e.cool=e.type==='archer'?1.3:1.0;
+        e.cool=e.type==='archer'?1.3:e.type==='mage'?1.6:1.0;
         if(e.type==='archer') fireProjectile(st,e,tgt,e.dmg);
+        else if(e.type==='mage') fireProjectile(st,e,tgt,e.dmg,UNITS.mage.splash);
         else { dealDamage(st,e,tgt,e.dmg); st.events.push({t:'hit',x:tgt.x,z:tgt.z}); }
         e.face=tgt;
       }
@@ -206,7 +210,7 @@ function moveToward(e,wp,dt){
 }
 export function orderMove(st,e,x,z,attack){
   // formation offsets applied by caller
-  e.order={kind:attack?'attackmove':'move',x,z,path:null,pi:0}; e.building=false;
+  e.order={kind:attack?'attackmove':'move',x,z,path:null,pi:0}; e.building=false; e.am=null;
 }
 export function orderAttack(st,e,id){ e.order={kind:'attack',id}; e.building=false; }
 export function orderGather(st,map,e,kind2,idx){ e.order={kind:'gather',kind2,idx}; }
@@ -222,6 +226,6 @@ export function nearestHall(st,owner,x,z){
   for(const e of st.entities){ if(e.dead||e.owner!==owner||e.cat!=='bld')continue; if(e.type!=='townhall'&&e.type!=='farm')continue; if(!e.done)continue; const d=(e.x-x)**2+(e.z-z)**2; if(d<bd){bd=d;best=e;} }
   return best;
 }
-export function fireProjectile(st,src,tgt,dmg){
-  addEntity(st,{cat:'proj',owner:src.owner,f:src.f||(src.owner===0?st.playerFaction:st.aiFaction),x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2});
+export function fireProjectile(st,src,tgt,dmg,splash=0){
+  addEntity(st,{cat:'proj',owner:src.owner,f:src.f||(src.owner===0?st.playerFaction:st.aiFaction),x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,splash,life:2});
 }

@@ -86,7 +86,7 @@ export function checkGameOver(st){
 
 // --- save/load (Save State system)
 const KEY='kingdoms-rts-save-v1';
-export function saveGame(st,map){ try{ localStorage.setItem(KEY, JSON.stringify({st:{...st,events:[]},map:{trees:map.trees.map(t=>({x:t.x,z:t.z,amount:t.amount})),gold:map.gold.map(t=>({x:t.x,z:t.z,amount:t.amount}))}})); return true;}catch{return false;} }
+export function saveGame(st,map){ try{ localStorage.setItem(KEY, JSON.stringify({st:{...st,events:[]},map:{trees:map.trees.map(t=>({x:t.x,z:t.z,amount:t.amount})),gold:map.gold.map(t=>({x:t.x,z:t.z,amount:t.amount})),explored0:Array.from(map.explored[0])}})); return true;}catch{return false;} }
 export function loadGame(){ try{ const s=localStorage.getItem(KEY); return s?JSON.parse(s):null;}catch{return null;} }
 export function wipeSave(){ try{localStorage.removeItem(KEY);}catch{} }
 const PKEY='kingdoms-rts-profile-v1';

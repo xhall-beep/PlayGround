@@ -18,8 +18,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .pill{background:#0009;border:1px solid var(--border);border-radius:999px;padding:4px 10px;white-space:nowrap}
 .pill b{color:var(--accent2)}
 #timer{margin-left:auto;opacity:.8}
-#sandboxBtn{margin-left:4px;border-radius:999px;padding:4px 10px}
-#sandbox{position:absolute;top:46px;right:8px;z-index:9;display:none;flex-direction:column;gap:6px;background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);box-shadow:var(--glow);border-radius:12px;padding:8px;min-width:170px}
+#sandboxBtn{margin-left:4px;border-radius:999px;padding:8px 10px;min-width:44px}
+#sandbox{position:absolute;top:calc(100% - 2px);right:8px;z-index:9;display:none;flex-direction:column;gap:6px;background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);box-shadow:var(--glow);border-radius:12px;padding:8px;min-width:170px}
 #sandbox button{text-align:left;font-size:12px}
 #perf{font-size:11px;opacity:.75;text-align:left;padding:0 2px;font-family:ui-monospace,monospace}
 #errbox{display:none;position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#2a0d0d;color:#ffd9d9;border:1px solid #a33;border-radius:10px;padding:8px 10px;font-size:12px;text-align:left}
@@ -36,7 +36,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 #selcard p{margin:2px 0;font-size:12px;opacity:.9}
 .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .dock-main button{flex:1 1 30%;min-height:48px;font-size:12px}
-button{background:var(--btn);color:var(--btn-ink);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700}
+button{background:var(--btn);color:var(--btn-ink);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700;min-height:44px}
 button:active{transform:scale(.97)}
 button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;text-shadow:0 1px 2px #0009;border:none}
 button.danger{background:#6e1f1f}
@@ -48,7 +48,7 @@ button:disabled{opacity:.4}
 .card h1 span{color:var(--accent2)}
 .card .sub{opacity:.85;font-size:13px;margin:6px 0 12px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.faction{border:2px solid var(--border);border-radius:12px;padding:8px;cursor:pointer;font-size:12px;background:#0006}
+.faction{border:2px solid var(--border);border-radius:12px;padding:8px;cursor:pointer;font-size:12px;background:#0006;min-height:56px}
 .faction.sel{border-color:var(--accent);box-shadow:var(--glow)}
 .faction b{display:block;font-size:13px}
 .faction i{display:block;font-size:11px;font-style:normal;opacity:.7;margin:1px 0 3px;color:var(--accent2)}
@@ -63,27 +63,57 @@ button:disabled{opacity:.4}
 .cnr.br{bottom:4px;right:4px;transform:scale(-1,-1)}
 label.row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin:8px 0;background:#0005;padding:8px 10px;border-radius:10px}
 select,input[type=range]{accent-color:var(--gold)}
+select{min-height:44px;padding:6px 8px;border-radius:8px;background:#0006;color:var(--ink);border:1px solid var(--border);font-weight:600}
 #notices{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;z-index:7;width:max-content;max-width:94vw;pointer-events:none}
 #notices>*{pointer-events:auto}
 body.tut #notices{top:132px}
 #toast{background-color:var(--panel);background-image:var(--texture);border:1px solid var(--border);box-shadow:var(--glow);padding:8px 14px;border-radius:999px;font-size:13px;display:none;max-width:94vw}
 #tut-coach{display:none}
 #endcard{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:9;background:#000a}
-#hint{position:absolute;top:52px;left:8px;font-size:11px;background:#0009;padding:6px 9px;border-radius:8px;z-index:4;max-width:60vw}
+#hint{position:absolute;top:50px;left:8px;font-size:11px;background:#0009;padding:6px 9px;border-radius:8px;z-index:4;max-width:60vw}
+#legend{position:absolute;top:8px;left:8px;z-index:4;display:flex;align-items:center;gap:8px;background:#050d18d9;border:1px solid #ffffff2e;border-radius:999px;padding:5px 10px;font-size:11px;color:#e6f1ff;pointer-events:none;backdrop-filter:blur(4px);white-space:nowrap}
+#legend .leg{display:inline-flex;align-items:center;gap:4px}
+#legend i{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 1px #0009,0 0 6px currentColor}
+#legend i.wood{background:#2fa14c;color:#2fa14c}
+#legend i.gold{background:#ffd75e;color:#ffd75e}
+#legend i.ally{background:#35e0ff;color:#35e0ff}
+#legend i.enemy{background:#ff5d5d;color:#ff5d5d}
+body.tut #legend{display:none}
+/* --- How to Play: dismissible, never blocks a match --- */
+#howto{position:fixed;inset:0;z-index:12;display:none;align-items:center;justify-content:center;padding:16px;background:#040912d9;backdrop-filter:blur(6px)}
+#howto .card{max-width:500px;padding:20px;border-color:var(--accent)}
+#howto-close{position:absolute;top:8px;right:8px;width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;background:#0007;font-size:17px;line-height:1;z-index:2}
+.howto-kicker{font-size:10px;letter-spacing:1.4px;color:var(--accent2);font-weight:800}
+#howto h2{margin:2px 24px 0 0;font-size:24px}
+.howto-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.howto-grid>div{background:#0006;border:1px solid var(--border);border-radius:12px;padding:9px 10px}
+.howto-grid b{display:block;font-size:12px;margin-bottom:2px}
+.howto-grid span{display:block;font-size:11px;line-height:1.35;opacity:.9}
+.howto-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:11px;background:#0006;border:1px solid var(--border);border-radius:10px;padding:7px 10px}
+.howto-legend .leg{display:inline-flex;align-items:center;gap:4px}
+.howto-legend i{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 1px #0009}
+.howto-legend i.wood{background:#2fa14c}
+.howto-legend i.gold{background:#ffd75e}
+.howto-legend i.ally{background:#35e0ff}
+.howto-legend i.enemy{background:#ff5d5d}
+.howto-actions{margin-top:12px}
+.howto-actions button{flex:1 1 44%}
+.howto-note{font-size:10px;opacity:.65;text-align:center;margin:8px 0 0}
 kbd{background:#fff2;border-radius:4px;padding:0 5px}
 /* --- Mission 1 tutorial chrome --- */
-#tutbar{position:absolute;top:8px;left:8px;right:8px;display:none;z-index:7;background-color:var(--panel);background-image:var(--texture);border:2px solid var(--accent);box-shadow:var(--glow);border-radius:14px;padding:10px 12px;backdrop-filter:blur(6px)}
+#tutbar{position:absolute;top:8px;left:8px;right:8px;display:none;z-index:7;background-color:var(--panel);background-image:var(--texture);border:2px solid var(--accent);box-shadow:var(--glow);border-radius:14px;padding:10px 116px 10px 12px;backdrop-filter:blur(6px)}
 #tut-counter{font-size:10px;letter-spacing:1.2px;opacity:.85;text-transform:uppercase}
 #tut-step{font-size:17px;font-weight:800;color:var(--accent2);margin-top:2px}
 #tut-sub{font-size:12px;opacity:.92;margin-top:2px}
 #tut-track{height:7px;background:#0007;border-radius:99px;overflow:hidden;margin-top:8px}
 #tut-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;transition:width .3s}
-#tut-skip{position:absolute;top:8px;right:8px;background:#0006;border:1px solid #fff3;color:#fff;font-size:11px;padding:4px 10px;border-radius:99px}
+#tut-skip{position:absolute;top:6px;right:6px;background:#0006;border:1px solid #fff3;color:#fff;font-size:11px;padding:4px 12px;border-radius:99px;min-height:44px}
 #tut-coach{background-color:var(--panel);background-image:var(--texture);border:2px solid var(--accent);box-shadow:var(--glow);color:var(--ink);border-radius:14px;padding:10px 14px;font-size:13px;font-weight:700;max-width:88vw;text-align:center}
 #tut-done{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000a;z-index:8}
 #tut-done .card{text-align:center;max-width:380px}
-@media (max-width:640px){#hint{display:none}#selcard{font-size:12px;right:108px}#minimap{width:92px;height:92px}#tut-step{font-size:15px}body.tut #notices{top:124px}}
-@media (max-height:560px){#tut-coach{font-size:12px;padding:7px 11px}#tutbar{padding:6px 10px}#tut-step{font-size:14px}#tut-counter{font-size:9px}#tut-track{margin-top:5px;height:6px}#selcard{padding:8px}body.tut #notices{top:104px}}
+@media (max-width:640px){#hint{display:none}#selcard{font-size:12px;right:108px}#minimap{width:92px;height:92px}#tut-step{font-size:15px}body.tut #notices{top:124px}#topbar{padding:6px 8px;gap:6px;font-size:12px}.pill{padding:4px 7px}#legend{top:6px;left:6px;font-size:10px;gap:6px;padding:4px 8px}#howto .card{padding:16px}.howto-grid{gap:6px}.howto-grid>div{padding:8px}.howto-grid span{font-size:10px}}
+@media (max-width:520px){.food-pill{display:none}}
+@media (max-height:560px){#tut-coach{font-size:12px;padding:7px 11px}#tutbar{padding:6px 112px 6px 10px}#tut-step{font-size:14px}#tut-counter{font-size:9px}#tut-track{margin-top:5px;height:6px}#selcard{padding:8px}body.tut #notices{top:104px}}
 </style>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
 </head>
@@ -93,7 +123,7 @@ kbd{background:#fff2;border-radius:4px;padding:0 5px}
     <i class="cnr tl"></i><i class="cnr tr"></i>
     <span class="pill">🪙 <b id="r-gold">0</b></span>
     <span class="pill">🪵 <b id="r-wood">0</b></span>
-    <span class="pill">🍏 <b id="r-food">0</b></span>
+    <span class="pill food-pill">🍏 <b id="r-food">0</b></span>
     <span class="pill">🏠 <b id="r-pop">0/0</b></span>
     <span class="pill">⚔️ <b id="r-army">0</b></span>
     <span id="timer">00:00</span>
@@ -108,6 +138,12 @@ kbd{background:#fff2;border-radius:4px;padding:0 5px}
   </div>
   <div id="view">
     <div id="gl"></div>
+    <div id="legend" aria-label="Map legend">
+      <span class="leg"><i class="wood"></i>Wood</span>
+      <span class="leg"><i class="gold"></i>Gold</span>
+      <span class="leg"><i class="ally"></i>Your units</span>
+      <span class="leg"><i class="enemy"></i>Enemy</span>
+    </div>
     <canvas id="minimap" width="132" height="132"></canvas>
     <div id="selcard" style="display:none"></div>
     <div id="hint">Tap: select / order &nbsp;•&nbsp; Drag: pan &nbsp;•&nbsp; Pinch: zoom &nbsp;•&nbsp; Long-press: build</div>
@@ -153,6 +189,31 @@ kbd{background:#fff2;border-radius:4px;padding:0 5px}
       <div class="sub" id="profileLine" style="margin-top:10px"></div>
       <div class="sub">Systems: Core Engine · World · Economy · Military · 4 Factions · Buildings · AI · Chibi 3D · Campaign/Meta. Saves to device. Pause anytime (SP-safe). <span id="buildTag"></span></div>
     </div></div>
+    <div id="howto" role="dialog" aria-modal="true" aria-labelledby="howto-title" aria-hidden="true">
+      <div class="card">
+        <button id="howto-close" aria-label="Close How to Play">✕</button>
+        <div class="howto-kicker">KINGDOMS RTS · FIELD MANUAL</div>
+        <h2 id="howto-title">How to play</h2>
+        <div class="sub">Gather, build, and raze the enemy Town Hall. <b>Start</b> opens Mission 1 — a guided tutorial with no enemies and no fail state.</div>
+        <div class="howto-grid">
+          <div><b>🪙 Gather</b><span>Tap a Peasant, then tap gold or a tree.</span></div>
+          <div><b>🔨 Build</b><span>With a Peasant selected, open More → Farm, Barracks or Tower.</span></div>
+          <div><b>⚔️ Fight</b><span>Train units, tap ground to move, tap an enemy to attack.</span></div>
+          <div><b>🏰 Win</b><span>Destroy the enemy Town Hall. Pause and save anytime.</span></div>
+        </div>
+        <div class="howto-legend" aria-label="Map legend">
+          <span class="leg"><i class="wood"></i>Wood</span>
+          <span class="leg"><i class="gold"></i>Gold</span>
+          <span class="leg"><i class="ally"></i>Your units</span>
+          <span class="leg"><i class="enemy"></i>Enemy</span>
+        </div>
+        <div class="btnrow howto-actions">
+          <button class="primary" id="howto-start">▶ Start</button>
+          <button id="howto-browse">Browse battles</button>
+        </div>
+        <p class="howto-note">Tap outside, press Esc, or use ✕ to close. Reopen anytime from How to play.</p>
+      </div>
+    </div>
     <div id="endcard"><div class="card" style="text-align:center"><i class="cnr tl"></i><i class="cnr tr"></i><i class="cnr bl"></i><i class="cnr br"></i><h1 id="endTitle">Victory!</h1><div class="sub" id="endSub"></div><div class="btnrow"><button class="primary" id="againBtn" style="flex:1">Play again</button><button id="menuBtn">Menu</button></div></div></div>
   </div>
 </div>

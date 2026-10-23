@@ -14,7 +14,7 @@ import { TutorialUI } from './missions/tutorial-ui.js';
 
 const $=id=>document.getElementById(id);
 const view=$('view'), gl=$('gl');
-const BUILD='v0.5.0';
+const BUILD='v0.7.0';
 
 // ---- crash visibility: never let a phone die silently ----
 function showErr(msg){ const b=$('errbox'); if(!b)return; $('errmsg').textContent=String(msg); b.style.display='block'; }
@@ -24,9 +24,36 @@ $('errclose').onclick=()=>{ $('errbox').style.display='none'; };
 
 let renderer=null, st=null, map=null, sel=new Set(), running=false, paused=false;
 let lastT=0, acc=0, aiAcc=0, saveAcc=0, uiAcc=0, selAcc=0, buildGhost=null;
-let lastPat=null, perfFrames=0, perfT=0;
+let lastPat=null, perfFrames=0, perfT=0, amove=false;
 let mission=null, tut=null, tutUI=null;
 const AI_ORDER=['orc','undead','elf','human'];
+
+// ---- first-run field manual -------------------------------------------------
+// Shown automatically once per device, then never again until the player asks
+// for it. Every exit path (✕, Start, backdrop, Esc) dismisses + persists, so the
+// overlay can never sit between a thumb and the map.
+const HELP_KEY='kingdoms-rts-help-seen-v1';
+let helpReturn=null;
+function helpSeen(){ try{ return localStorage.getItem(HELP_KEY)==='1'; }catch{ return false; } }
+function showHelp(){
+  const h=$('howto'); if(!h)return;
+  helpReturn=document.activeElement;
+  h.style.display='flex'; h.setAttribute('aria-hidden','false');
+  const c=$('howto-close'); if(c) c.focus({preventScroll:true});
+}
+function dismissHelp(restore=true){
+  const h=$('howto'); if(!h)return;
+  try{ localStorage.setItem(HELP_KEY,'1'); }catch{}
+  h.style.display='none'; h.setAttribute('aria-hidden','true');
+  const back=helpReturn; helpReturn=null;
+  if(restore&&back&&back!==document.body&&document.contains(back)) back.focus({preventScroll:true});
+}
+$('howto').addEventListener('click',e=>{ if(e.target===$('howto')) dismissHelp(); });
+$('howto-close').onclick=()=>dismissHelp();
+$('howto-browse').onclick=()=>dismissHelp();
+$('howto-start').onclick=()=>{ dismissHelp(false); startMission1(); };
+addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('howto').style.display!=='none') dismissHelp(); });
+
 
 // ---- faction-reactive UI skin: data-faction theme + procedural SVG corners ----
 const FACTION_CORNERS={
@@ -62,7 +89,7 @@ function renderFactions(){
   $('continueBtn').disabled=!loadGame();
   $('continueBtn').onclick=()=>{ const s=loadGame(); if(s) startFromSave(s); };
   $('wipeBtn').onclick=()=>{ wipeSave(); $('continueBtn').disabled=true; toast('Save wiped'); };
-  $('helpBtn').onclick=()=>toast('🧑‍🌾 Peasants gather + build. 🌾 Farm=+6 pop. ⚒️ Barracks=army. Tap enemy=attack. Destroy enemy 🏰!');
+  $('helpBtn').onclick=()=>showHelp();
   $('startBtn').onclick=()=>startNew(box.dataset.sel||'human');
   $('mission1Btn').onclick=()=>startMission1();
 }
@@ -162,13 +189,15 @@ function startNew(faction){
 }
 function startFromSave(s){
   setSound($('sound').value);
-  st=s.st; st.events=[]; st.over=null; reseedUID(st); map={trees:s.map.trees,gold:s.map.gold,explored:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)],visible:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)]};
-  // rebuild explored approx: mark all explored (simple)
+  st=s.st; st.events=[]; st.over=null; reseedUID(st);   map={trees:s.map.trees,gold:s.map.gold,explored:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)],visible:[new Uint8Array(GRID*GRID),new Uint8Array(GRID*GRID)]};
+  if(s.map.explored0&&s.map.explored0.length===GRID*GRID) map.explored[0]=Uint8Array.from(s.map.explored0);
+  updateFog(st,map); // restores current sight on top of the saved explored map
   begin();
   for(const e of st.entities) if(e.cat==='bld'&&e.type==='townhall'&&!e.dead) renderer.addBaseDecal(e.x,e.z,e.owner===0?st.playerFaction:st.aiFaction);
   applyFactionTheme(st.playerFaction);
 }
 function begin(isTutorial=false){
+  if($('howto').style.display!=='none') dismissHelp(false);
   $('menu').style.display='none'; $('endcard').style.display='none';
   document.body.classList.toggle('tut',isTutorial);
   if(!renderer){ renderer=new Renderer(gl); }
@@ -214,9 +243,10 @@ const game={
         sel=new Set(squad.map(en=>en.id));
         toast(`Selected ${squad.length} ${UNITS[best.type].name}s`);
       } else sel=new Set([best.id]);
-      lastPat={id:best.id,t:now};
+      lastPat={id:best.id,t:now}; amove=false;
       sfx.select(); renderSel();
     } else if(best&&best.owner===1){ // attack / target
+      amove=false;
       if(mine.length){ mine.forEach((u,i)=>{ if(u.cat==='unit'){ if(u.type==='peasant'&&best.cat==='bld')return; orderAttack(st,u,best.id);} }); sfx.move(); toast('⚔️ Attack!'); }
       else { sel=new Set([best.id]); renderSel(); }
     } else if(best&&best.owner===2){ /* resource handled below */ }
@@ -229,6 +259,10 @@ const game={
       const rBlds=mine.filter(en=>en.cat==='bld'&&en.done&&trainableAt(en.type).length);
       if(node&&peas.length){ peas.forEach(p=>orderGather(st,map,p,nk==='gold'?'gold':'tree',ni)); sfx.move(); toast(nk==='gold'?'⛏️ Mine gold!':'🪓 Chop wood!'); }
       else if(rBlds.length&&!mine.some(en=>en.cat==='unit')){ rBlds.forEach(b=>{b.rally={x:pt.x,z:pt.z};}); sfx.move(); toast('🚩 Rally point set'); renderSel(); }
+      else if(amove&&mine.some(u=>u.cat==='unit')){ // attack-move: engage anything on the way
+        mine.filter(u=>u.cat==='unit').forEach((u,i)=>{ const ox=(i%3-1)*1.8,oz=Math.floor(i/3)*1.8; orderMove(st,u,pt.x+ox,pt.z+oz,true); });
+        amove=false; sfx.move(); toast('⚔️ Attack-move!'); renderSel();
+      }
       else if(mine.length&&mine.some(u=>u.cat==='unit')){ // move with formation
         mine.filter(u=>u.cat==='unit').forEach((u,i)=>{ const ox=(i%3-1)*1.8,oz=Math.floor(i/3)*1.8; orderMove(st,u,pt.x+ox,pt.z+oz,false); });
         sfx.move();
@@ -261,6 +295,7 @@ function renderSel(forceBuild=false){
           html+=`<button data-b="${k}">${b.icon} Build ${b.name}<br><small>${c}</small></button>`; }
         html+=`<button data-a="build">🔨 More</button><button data-a="wood">🪓 Wood</button><button data-a="gold">⛏️ Gold</button>`;
       }
+      html+=`<button data-a="amove">${amove?'⚔️ Tap target…':'⚔️ Attack Move'}</button>`;
       html+=`<button data-a="stop">⏹ Stop</button>`;
       html+=dockSpecial();
       html+=`</div><div class="btnrow" data-pane="build" style="display:${forceBuild?'flex':'none'}">`;
@@ -292,6 +327,7 @@ function onCardBtn(b,e,forceBuild){
   const fm=factionMult(st.playerFaction);
   const a=b.dataset.a, u=b.dataset.u, bb=b.dataset.b;
   if(a==='stop'){ [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.cat==='unit')x.order={kind:'idle'};}); }
+  if(a==='amove'){ amove=!amove; toast(amove?'⚔️ Tap a target to attack-move':'Attack-move cancelled'); renderSel(); return; }
   if(a==='build'){ const p=cardPane(); if(p)p.style.display=p.style.display==='none'?'flex':'none'; }
   if(a==='wood'||a==='gold'){ const kind2=a==='gold'?'gold':'tree'; [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.type==='peasant'){const i=findResource(map,x.x,x.z,kind2,st); if(i>=0)orderGather(st,map,x,kind2,i);}}); sfx.move(); }
   if(a==='special'){ toast(castSpecial(st,map,0)); sfx.build(); renderSel(); return; }
@@ -397,7 +433,7 @@ function renderSelLive(){ // rebuild at ~1Hz only when something visible changed
   if($('selcard').style.display==='none'||!sel.size) return;
   const e=[...sel].map(id=>byId(st,id)).find(x=>x&&!x.dead);
   if(!e) return;
-  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),st.res[0].gold|0,st.res[0].wood|0,Math.ceil((st.specialCd&&st.specialCd[0])||0),paused?'p':''].join('|');
+  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),st.res[0].gold|0,st.res[0].wood|0,Math.ceil((st.specialCd&&st.specialCd[0])||0),paused?'p':'',amove?'am':''].join('|');
   if(sig===lastSig) return; lastSig=sig;
   const paneOpen=!!document.querySelector('#selcard [data-pane="build"]')&&document.querySelector('#selcard [data-pane="build"]').style.display!=='none';
   renderSel(paneOpen);
@@ -405,7 +441,7 @@ function renderSelLive(){ // rebuild at ~1Hz only when something visible changed
 function endGame(win,draw){
   const prof=getProfile();
   if(win){prof.wins++; sfx.win(); if(!prof.best||st.t<parseT(prof.best))prof.best=fmt(st.t); addAch(prof,'👑');}
-  else {prof.losses++; sfx.lose();}
+  else if(!draw){prof.losses++; sfx.lose();}
   if(st.firstBlood) addAch(prof,'🩸');
   if(st.stats.kills[0]>=20) addAch(prof,'⚔️20');
   setProfile(prof);
@@ -432,7 +468,12 @@ $('sbWave').onclick=()=>{ if(!st||!running){toast('Start a game first');return;}
 $('sbFog').onclick=()=>{ if(!st){toast('Start a game first');return;} st.fog=!st.fog; toast(st.fog?'⚙️ Fog of war on':'⚙️ Fog of war off'); };
 $('sbSpeed').onclick=()=>{ if(!st){toast('Start a game first');return;} st.speed=st.speed>=2?1:2; $('sbSpeed').textContent=st.speed>=2?'1× Speed':'2× Speed'; toast(`⚙️ Speed ${st.speed}×`); };
 renderFactions();
+if(!helpSeen()) showHelp();
 $('buildTag').textContent=`build ${BUILD}`;
+// tap / drag the minimap to jump the camera there
+$('minimap').addEventListener('pointerdown',e=>{ if(!st||st.over||st.tutorial||!renderer||renderer.fixed)return;
+  const r=$('minimap').getBoundingClientRect(); const fx=(e.clientX-r.left)/r.width, fz=(e.clientY-r.top)/r.height;
+  renderer.target.x=Math.max(-46,Math.min(46,fx*96-48)); renderer.target.z=Math.max(-46,Math.min(46,fz*96-48)); });
 console.log('KINGDOMS RTS',BUILD);
 // Ambient demo scene behind menu so first paint is never black
 try{

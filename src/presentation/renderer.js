@@ -4,7 +4,7 @@ import { WORLD, GRID, CELL, alive, g2w } from '../core/engine.js';
 import { BUILDINGS, UNITS } from '../buildings/data.js';
 import { coreFaction } from '../factions/factions.js';
 
-const UNIT_C={human:0x3b6fe0,orc:0x9a3b1e,undead:0x8a7ab8,elf:0x2f9e5f};
+const UNIT_C={human:0x3b6fe0,orc:0x9a3b1e,undead:0x8a7ab8,elf:0x37c978};
 const ROOF_C={human:0x1d4ed8,orc:0x40240f,undead:0x4c2a85,elf:0x065f46};
 const WALL_C={human:0xdfe6f2,orc:0x8a6a4a,undead:0xd6d3d1,elf:0xe4efe0};
 const FLAG_C={human:0x2b5cff,orc:0xff2b2b,undead:0xa855f7,elf:0xfbbf24};
@@ -50,13 +50,14 @@ export class Renderer{
     const geo=new THREE.PlaneGeometry(WORLD,WORLD,GRID,GRID);
     geo.rotateX(-Math.PI/2);
     const pos=geo.attributes.position, colors=[];
-    // Lush forest floor: emerald grass, light meadow, deep moss shade.
-    const c1=new THREE.Color(0x58b368),c2=new THREE.Color(0x8fd694),c3=new THREE.Color(0x2d6a4f);
+    // Muted forest floor: enough green to feel lush, dark/desaturated enough
+    // that gold, trees and faction-colored units keep a clean silhouette.
+    const c1=new THREE.Color(0x4f8656),c2=new THREE.Color(0x74a568),c3=new THREE.Color(0x2b5540);
     for(let i=0;i<pos.count;i++){
       const x=pos.getX(i),z=pos.getZ(i);
       const n=Math.sin(x*0.35)*Math.cos(z*0.3)+Math.sin(x*0.12+z*0.2);
       const c=(n>0.6?c2:(n<-0.4?c3:c1)).clone();
-      c.offsetHSL(0,0.18,0.02); // extra chroma, still readable
+      c.offsetHSL(0,0.04,-0.015); // tame neon greens; keep terrain behind the action
       colors.push(c.r,c.g,c.b);
       pos.setY(i,Math.sin(x*0.15)*Math.cos(z*0.15)*0.25);
     }
@@ -93,11 +94,11 @@ export class Renderer{
     // Trees: three InstancedMesh layers (trunk/top/tip) = 3 draw calls for the
     // whole forest instead of ~1000. Instance colors carry the leaf palette.
     const n=map.trees.length;
-    const trunkIM=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35,0.5,1.6,6),new THREE.MeshStandardMaterial({color:0x6b4423,roughness:1}),n);
+    const trunkIM=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35,0.5,1.6,6),new THREE.MeshStandardMaterial({color:0x55341b,roughness:1}),n);
     const leafMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.85,flatShading:true});
     const topIM=new THREE.InstancedMesh(new THREE.ConeGeometry(1.4,2.6,7),leafMat,n);
     const tipIM=new THREE.InstancedMesh(new THREE.ConeGeometry(0.85,1.5,7),leafMat,n);
-    const leafC=[0x1e7a34,0x2c9a44,0x3fb65a,0x14713c].map(c=>new THREE.Color(c));
+    const leafC=[0x1a6f33,0x26883e,0x349a47,0x135c33].map(c=>new THREE.Color(c));
     trunkIM.castShadow=topIM.castShadow=tipIM.castShadow=true;
     const insts=map.trees.map((t,i)=>{
       const s=0.9+(i%5)*0.12;
@@ -109,11 +110,14 @@ export class Renderer{
     this.scene.add(trunkIM,topIM,tipIM);
     this.treeIM={meshes:[trunkIM,topIM,tipIM],trunk:trunkIM,top:topIM,tip:tipIM,insts,xf:new THREE.Matrix4(),q:new THREE.Quaternion(),v:new THREE.Vector3(),sc:new THREE.Vector3()};
     const rockGeo=new THREE.DodecahedronGeometry(1.1,0);
-    const goldMat=new THREE.MeshStandardMaterial({color:0xf5c542,roughness:0.35,metalness:0.6,emissive:0x442200});
+    const goldMat=new THREE.MeshStandardMaterial({color:0xffd23f,roughness:0.3,metalness:0.25,emissive:0x7a4a00,emissiveIntensity:0.55});
+    const goldRingMat=new THREE.MeshBasicMaterial({color:0xffd75e,transparent:true,opacity:0.55,side:THREE.DoubleSide,depthWrite:false});
     map.gold.forEach(n=>{
       const g=new THREE.Group();
       const r=new THREE.Mesh(rockGeo,goldMat); r.position.y=0.8; r.castShadow=true; g.add(r);
-      const base=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.7,0.5,8),new THREE.MeshStandardMaterial({color:0x6b6b6b})); base.position.y=0.25; g.add(base);
+      const base=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.7,0.5,8),new THREE.MeshStandardMaterial({color:0x4a4f55})); base.position.y=0.25; g.add(base);
+      // Gold-only ground ring: the yellow marker reads even at phone zoom.
+      const ring=new THREE.Mesh(new THREE.RingGeometry(1.95,2.3,24),goldRingMat); ring.rotation.x=-Math.PI/2; ring.position.y=0.05; g.add(ring);
       g.position.set(n.x,0,n.z); this.scene.add(g); this.resMeshes.push({g,node:n,kind:'gold'});
     });
   }
@@ -176,6 +180,13 @@ export class Renderer{
       if(F==='orc'){ const sp=new THREE.Mesh(new THREE.ConeGeometry(0.5,1.4,6),new THREE.MeshStandardMaterial({color:0x991b1b})); sp.position.y=5.6; g.add(sp); }
       if(F==='undead'){ const sk=new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8),new THREE.MeshStandardMaterial({color:0xd6d3d1})); sk.position.y=5.4; g.add(sk); }
       return g; }
+    if(type==='mage'){ const t=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.25,3.2,8),wall); t.position.y=1.6; t.castShadow=true; g.add(t);
+      const top=new THREE.Mesh(new THREE.ConeGeometry(1.45,1.6,8),roofM); top.position.y=4.0; top.castShadow=true; g.add(top);
+      const orb=new THREE.Mesh(new THREE.SphereGeometry(0.55,10,10),new THREE.MeshStandardMaterial({color:PROJ_C[F],emissive:PROJ_C[F],emissiveIntensity:0.55,roughness:0.3}));
+      orb.position.y=5.35; g.add(orb);
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(1.0,0.07,6,20),new THREE.MeshStandardMaterial({color:PROJ_C[F],emissive:PROJ_C[F],emissiveIntensity:0.35}));
+      ring.rotation.x=Math.PI/2; ring.position.y=4.35; g.add(ring);
+      return g; }
     const box=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),wall); box.position.y=h/2; box.castShadow=true; g.add(box);
     const roof=new THREE.Mesh(new THREE.ConeGeometry(w*0.85,1.4,4),roofM); roof.position.y=h+0.7; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
     if(type==='townhall'){ const tw=new THREE.Mesh(new THREE.BoxGeometry(0.8,3.4,0.8),wall); tw.position.set(w/2,1.7,0); tw.castShadow=true; g.add(tw);
@@ -200,7 +211,9 @@ export class Renderer{
         const ef=e.f||(e.owner===0?st.playerFaction:st.aiFaction);
         const g=e.cat==='unit'?this.chibi(UNIT_C[coreFaction(ef)]??0x3b6fe0):this.bldMesh(e.type,e.owner,ef);
         // weapon props
-        if(e.cat==='unit'&&e.type!=='peasant'){ const w=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.1,0.12),new THREE.MeshStandardMaterial({color:0x888888})); w.position.set(0.7,1.2,0.2); w.rotation.z=0.4; g.add(w); }
+        if(e.cat==='unit'&&e.type==='mage'){ const staff=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,1.6,6),new THREE.MeshStandardMaterial({color:0x6b4423})); staff.position.set(0.76,1.25,0.2); staff.rotation.z=0.22; g.add(staff);
+          const orb=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,8),new THREE.MeshBasicMaterial({color:PROJ_C[coreFaction(ef)]??0x9fc0ff})); orb.position.set(0.9,2.1,0.2); g.add(orb); }
+        else if(e.cat==='unit'&&e.type!=='peasant'){ const w=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.1,0.12),new THREE.MeshStandardMaterial({color:0x888888})); w.position.set(0.7,1.2,0.2); w.rotation.z=0.4; g.add(w); }
         if(e.cat==='unit'&&e.type==='peasant'){ const ax=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.9,0.1),new THREE.MeshStandardMaterial({color:0x6b4423})); ax.position.set(0.7,1.1,0); g.add(ax); }
         // hp bar
         const hb=document.createElement('canvas'); hb.width=32; hb.height=4;
@@ -209,6 +222,11 @@ export class Renderer{
         // selection ring
         const ring=new THREE.Mesh(new THREE.RingGeometry(0.9,1.1,24),new THREE.MeshBasicMaterial({color:e.owner===0?0x4dff7a:0xff4d4d,transparent:true,opacity:0.9,side:THREE.DoubleSide}));
         ring.rotation.x=-Math.PI/2; ring.position.y=0.1; ring.visible=false; g.add(ring);
+        // permanent team ring: cyan ally / red enemy, always legible on grass
+        if(e.cat==='unit'){
+          const team=new THREE.Mesh(new THREE.RingGeometry(0.58,0.8,20),new THREE.MeshBasicMaterial({color:e.owner===0?0x35e0ff:0xff5d5d,transparent:true,opacity:0.7,side:THREE.DoubleSide,depthWrite:false}));
+          team.rotation.x=-Math.PI/2; team.position.y=0.06; g.add(team);
+        }
         this.scene.add(g); rec={g,bar,hb,tex,ring}; this.meshes.set(e.id,rec);
       }
       const BobY=e.cat==='unit'?Math.abs(Math.sin(time*6+e.id))*0.12:0;
@@ -293,7 +311,7 @@ export class Renderer{
   }
   syncProj(e){
     let rec=this.meshes.get('p'+e.id);
-    if(!rec){ const m=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8),new THREE.MeshBasicMaterial({color:PROJ_C[coreFaction(e.f)]??0xffe08a})); this.scene.add(m); rec={g:m}; this.meshes.set('p'+e.id,rec); }
+    if(!rec){ const rad=e.splash?0.36:0.22; const m=new THREE.Mesh(new THREE.SphereGeometry(rad,8,8),new THREE.MeshBasicMaterial({color:PROJ_C[coreFaction(e.f)]??0xffe08a})); this.scene.add(m); rec={g:m}; this.meshes.set('p'+e.id,rec); }
     rec.g.position.set(e.x,1.6,e.z);
   }
   hit(x,z){
