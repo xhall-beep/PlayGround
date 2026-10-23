@@ -17,12 +17,13 @@ export class TutorialUI{
     this.doneSub=root.querySelector('#tut-done-sub');
     this.doneContinue=root.querySelector('#tut-done-go');
     this.onSkip=null; this.onDone=null;
+    this._coachFade=0;
     this.skip.onclick=()=>{ this.onSkip&&this.onSkip(); };
     this.doneContinue.onclick=()=>{ this.onDone&&this.onDone(); };
     this.visible=false;
   }
   show(){ this.visible=true; this.bar.style.display='block'; }
-  hide(){ this.visible=false; this.bar.style.display='none'; this.coach.style.display='none'; this.doneCard.style.display='none'; }
+  hide(){ this.visible=false; clearTimeout(this._coachFade); this.bar.style.display='none'; this.coach.style.display='none'; this.coach.classList.remove('fade'); this.doneCard.style.display='none'; }
   /** Per-frame-ish update from mission runner + ctx. */
   update(runner,ctx){
     if(!this.visible) return;
@@ -34,15 +35,23 @@ export class TutorialUI{
       this.stepSub.textContent=`Reward: ${MISSION1.reward.gold}🪙 ${MISSION1.reward.wood}🪵 ${MISSION1.reward.achievement}`;
       this.progressFill.style.width='100%';
       this.coach.style.display='none';
+      clearTimeout(this._coachFade); this.coach.classList.remove('fade');
       return;
     }
     const step=runner.current;
     this.stepTitle.textContent=step.title;
     this.stepSub.textContent=runner.progressText(ctx);
     this.progressFill.style.width=`${Math.round(runner.progress(ctx)*100)}%`;
-    // Coach card: shown only while the player hasn't done it yet.
-    if(step.coach){ this.coach.style.display='block'; this.coachText.textContent=step.coach; }
-    else this.coach.style.display='none';
+    // Coach card: a short-lived bottom hint that never sits over the map centre.
+    if(step.coach){
+      this.coach.style.display='block';
+      if(this.coachText.textContent!==step.coach){
+        this.coachText.textContent=step.coach;
+        this.coach.classList.remove('fade');
+        clearTimeout(this._coachFade);
+        this._coachFade=setTimeout(()=>this.coach.classList.add('fade'),5000);
+      }
+    } else { this.coach.style.display='none'; clearTimeout(this._coachFade); this.coach.classList.remove('fade'); }
   }
   celebrate(reward){
     this.doneSub.textContent=`+${reward.gold}🪙 +${reward.wood}🪵 ${reward.achievement} added to your kingdom.`;

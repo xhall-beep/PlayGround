@@ -59,8 +59,9 @@ export class Renderer{
     this.fogMesh=new THREE.Mesh(fg,this.fogMat); this.fogMesh.position.y=0.6; this.scene.add(this.fogMesh);
   }
   // Fixed-camera distance + FOV by aspect. Vertical FOV widens on tall phones so
-  // the whole clearing stays reachable by thumb without moving the camera.
-  camDistFor(aspect){ return aspect<0.75?42:(aspect<1.2?38:30); }
+  // the whole clearing stays reachable by thumb without moving the camera. The
+  // distance is pulled in ~12% so the clearing fills the freed HUD space.
+  camDistFor(aspect){ return aspect<0.75?37:(aspect<1.2?34:27); }
   fovFor(aspect){ return aspect<0.75?60:(aspect<1.2?50:46); }
   resize(){
     const w=this.container.clientWidth,h=this.container.clientHeight;

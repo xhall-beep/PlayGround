@@ -38,7 +38,13 @@ function renderFactions(){
   $('startBtn').onclick=()=>startNew(box.dataset.sel||'human');
   $('mission1Btn').onclick=()=>startMission1();
 }
-function toast(msg,ms=2600){ const t=$('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',ms); }
+function toast(msg,ms=2600){
+  const wrap=$('toasts'); if(!wrap)return;
+  const el=document.createElement('div'); el.className='toast'; el.textContent=msg;
+  wrap.appendChild(el);
+  while(wrap.children.length>3) wrap.firstChild.remove();
+  setTimeout(()=>{ el.classList.add('gone'); setTimeout(()=>el.remove(),380); },ms);
+}
 
 // ---- Mission 1: tutorial mode (no enemies, no fail state) ----
 function startMission1(){
@@ -314,13 +320,17 @@ function loop(now){
         if(ev.type==='mission-done'){ sfx.win(); onMissionComplete(ev.reward); }
       }
     }
-    uiAcc+=dt; if(uiAcc>=0.2){ uiAcc=0; updateCoachMark(); tutUI.update(mission,makeCtx(st,map,sel,mission.history,0)); }
+    uiAcc+=dt; if(uiAcc>=0.2){ uiAcc=0; updateCoachMark(); tutUI.update(mission,makeCtx(st,map,sel,mission.history,0));
+      const sc=$('selcard'), cc=$('tut-coach'), open=!!sc&&sc.style.display!=='none';
+      document.body.classList.toggle('has-sel',open);
+      if(cc) cc.style.bottom=(open&&innerHeight>560)?`calc(var(--safe-b) + ${sc.offsetHeight+18}px)`:'';
+    }
   }
   if(st.over&&!st._end&&!st.tutorial){ st._end=true; endGame(st.over.win,st.over.draw); }
 }
 function onMissionComplete(reward){
-  const prof=getProfile();
-  markMissionComplete(prof,MISSION1.id);
+  let prof=getProfile();
+  prof=markMissionComplete(prof,MISSION1.id);
   addAch(prof,reward.achievement);
   setProfile(prof);
   // Reward is real: it lands in the kingdom you carry into the battle.
@@ -360,6 +370,9 @@ window.__game={ get st(){return st;}, get map(){return map;}, get sel(){return s
 
 // ---- boot ----
 $('againBtn').onclick=()=>location.reload();
+try{ if(localStorage.getItem('kingdoms-rts-hud')==='0') document.body.classList.add('hud-collapsed'); }catch{}
+$('hudToggle').onclick=()=>{ const off=document.body.classList.toggle('hud-collapsed'); $('hudToggle').setAttribute('aria-label',off?'Show HUD':'Hide HUD'); try{localStorage.setItem('kingdoms-rts-hud',off?'0':'1');}catch{} sfx.select(); };
+$('hudToggle').setAttribute('aria-label',document.body.classList.contains('hud-collapsed')?'Show HUD':'Hide HUD');
 renderFactions();
 // Ambient demo scene behind menu so first paint is never black
 try{
