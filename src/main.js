@@ -38,7 +38,12 @@ function renderFactions(){
   $('startBtn').onclick=()=>startNew(box.dataset.sel||'human');
   $('mission1Btn').onclick=()=>startMission1();
 }
-function toast(msg,ms=2600){ const t=$('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',ms); }
+function toast(msg,ms=2600){
+  const box=$('toasts'); const d=document.createElement('div'); d.className='toast'; d.textContent=msg;
+  box.appendChild(d);
+  while(box.children.length>3) box.firstChild.remove();
+  d._h=setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>d.remove(),350); },ms);
+}
 
 // ---- Mission 1: tutorial mode (no enemies, no fail state) ----
 function startMission1(){
@@ -55,7 +60,7 @@ function startMission1(){
   tutUI.onDone=()=>exitTutorial();
   begin(true);
   tutUI.show();
-  tutUI.update(mission,makeCtx(st,map,sel,mission.history,0));
+  tutUI.update(mission,makeCtx(st,map,sel,mission.history,st.res[0].wood));
   toast('🍂 Welcome to Autumn Forest — nobody will attack you here.',3600);
 }
 function genTutMap(seed){
@@ -267,22 +272,25 @@ function onCardBtn(b,e,forceBuild){
 function cardPane(){ return document.querySelector('#selcard [data-pane="build"]'); }
 
 // ---- HUD + minimap ----
+const MM=112;
 const mm=$('minimap').getContext('2d');
+const hudToggle=$('hudToggle');
+hudToggle.onclick=()=>{ const off=!document.body.classList.contains('hud-off'); document.body.classList.toggle('hud-off',off); hudToggle.textContent=off?'▾':'▴'; hudToggle.setAttribute('aria-label',off?'Show HUD':'Hide HUD'); hudToggle.title=off?'Show HUD':'Hide HUD'; };
 function hud(){
   const r=st.res[0];
   $('r-gold').textContent=`${r.gold|0}`; $('r-wood').textContent=`${r.wood|0}`; $('r-food').textContent=`${r.food|0}`;
   $('r-pop').textContent=`${ownerPop(st,0)}/${popCap(st,0)}`;
   $('r-army').textContent=`${st.entities.filter(e=>e.owner===0&&e.cat==='unit'&&e.type!=='peasant'&&!e.dead).length}`;
-  const m=(st.t/60)|0,s=(st.t%60)|0; $('timer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${st.tutorial?' · tutorial':` · ${st.aiPersona}`}`;
+  const m=(st.t/60)|0,s=(st.t%60)|0; $('timer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${st.tutorial?'':` · ${st.aiPersona}`}`;
   // minimap
-  mm.fillStyle='#0c0a06'; mm.fillRect(0,0,132,132);
-  const px=v=>((v+48)/96)*132;
+  mm.fillStyle='#0c0a06'; mm.fillRect(0,0,MM,MM);
+  const px=v=>((v+48)/96)*MM;
   mm.fillStyle='#3a5f2a'; for(let i=0;i<map.trees.length;i+=3){const t=map.trees[i]; if(t.amount>0){mm.fillStyle='#2c6e31'; mm.fillRect(px(t.x),px(t.z),2,2);}}
   mm.fillStyle='#f5c542'; for(const g of map.gold){ if(g.amount>0)mm.fillRect(px(g.x)-1,px(g.z)-1,3,3); }
   for(const e of st.entities){ if(e.dead)continue; if(st.fog&&e.owner===1){const gx=Math.floor(e.x/CELL+GRID/2),gz=Math.floor(e.z/CELL+GRID/2); if(gx<0||gz<0||gx>=GRID||gz>=GRID||!map.visible[0][gz*GRID+gx])continue;}
     mm.fillStyle=e.owner===0?(e.cat==='bld'?'#4da3ff':'#9fd0ff'):(e.cat==='bld'?'#ff5b5b':'#ffb09f');
     mm.fillRect(px(e.x)-1,px(e.z)-1,e.cat==='bld'?4:2,e.cat==='bld'?4:2); }
-  mm.strokeStyle='#fff6'; mm.strokeRect(0.5,0.5,131,131);
+  mm.strokeStyle='#fff6'; mm.strokeRect(0.5,0.5,MM-1,MM-1);
 }
 
 // ---- main loop: fixed 10Hz sim + render ----
@@ -306,15 +314,15 @@ function loop(now){
   // Mission 1 tutorial: evaluated after the sim step, no fail state, no AI.
   // The UI keeps refreshing after completion so the bar settles on "complete".
   if(mission){
+    const ctx=makeCtx(st,map,sel,mission.history,0);
     if(!mission.done){
-      const ctx=makeCtx(st,map,sel,mission.history,0);
       for(const ev of mission.tick(st,ctx,st.t)){
         if(ev.type==='step-done'){ sfx.coin(); toast(`✅ ${ev.step.title} — done!`,2200); }
         if(ev.type==='step-start') missionAssist(ev.step.id);
         if(ev.type==='mission-done'){ sfx.win(); onMissionComplete(ev.reward); }
       }
     }
-    uiAcc+=dt; if(uiAcc>=0.2){ uiAcc=0; updateCoachMark(); tutUI.update(mission,makeCtx(st,map,sel,mission.history,0)); }
+    uiAcc+=dt; if(uiAcc>=0.2){ uiAcc=0; updateCoachMark(); tutUI.update(mission,ctx); }
   }
   if(st.over&&!st._end&&!st.tutorial){ st._end=true; endGame(st.over.win,st.over.draw); }
 }
@@ -356,7 +364,7 @@ function parseT(s){const[a,b]=s.split(':').map(Number);return a*60+b;}
 function addAch(p,a){if(!p.ach.includes(a))p.ach.push(a);}
 
 // debug/testing handle
-window.__game={ get st(){return st;}, get map(){return map;}, get sel(){return sel;}, get renderer(){return renderer;}, get mission(){return mission;}, get paused(){return paused;}, get running(){return running;} };
+window.__game={ get st(){return st;}, get map(){return map;}, get sel(){return sel;}, get renderer(){return renderer;}, get mission(){return mission;}, get paused(){return paused;}, get running(){return running;}, toast };
 
 // ---- boot ----
 $('againBtn').onclick=()=>location.reload();

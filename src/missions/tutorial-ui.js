@@ -22,7 +22,31 @@ export class TutorialUI{
     this.visible=false;
   }
   show(){ this.visible=true; this.bar.style.display='block'; }
-  hide(){ this.visible=false; this.bar.style.display='none'; this.coach.style.display='none'; this.doneCard.style.display='none'; }
+  hide(){ this.visible=false; this.bar.style.display='none'; this.coach.style.display='none'; this.doneCard.style.display='none'; this._coach(null); }
+  /** Keep the hint pill clear of the bottom HUD and let it fade after a few seconds. */
+  _coach(text){
+    if(this._coachText===text) return;
+    this._coachText=text;
+    clearTimeout(this._coachT);
+    this.coach.classList.remove('fade');
+    if(!text){ this.coach.style.display='none'; return; }
+    this.coachText.textContent=text;
+    this.coach.style.display='block';
+    this._coachT=setTimeout(()=>this.coach.classList.add('fade'),6000);
+  }
+  _coachLift(){
+    const view=this.root.querySelector('#view');
+    if(!view) return;
+    const vr=view.getBoundingClientRect();
+    let lift=8;
+    for(const sel of ['#selcard','#minimap']){
+      const el=this.root.querySelector(sel);
+      if(!el) continue;
+      const r=el.getBoundingClientRect();
+      if(r.height>0&&r.width>0) lift=Math.max(lift,vr.bottom-r.top+8);
+    }
+    this.coach.style.setProperty('--coach-b',`${Math.round(lift)}px`);
+  }
   /** Per-frame-ish update from mission runner + ctx. */
   update(runner,ctx){
     if(!this.visible) return;
@@ -33,16 +57,16 @@ export class TutorialUI{
       this.stepTitle.textContent='Mission complete';
       this.stepSub.textContent=`Reward: ${MISSION1.reward.gold}🪙 ${MISSION1.reward.wood}🪵 ${MISSION1.reward.achievement}`;
       this.progressFill.style.width='100%';
-      this.coach.style.display='none';
+      this._coach(null);
       return;
     }
     const step=runner.current;
     this.stepTitle.textContent=step.title;
     this.stepSub.textContent=runner.progressText(ctx);
     this.progressFill.style.width=`${Math.round(runner.progress(ctx)*100)}%`;
-    // Coach card: shown only while the player hasn't done it yet.
-    if(step.coach){ this.coach.style.display='block'; this.coachText.textContent=step.coach; }
-    else this.coach.style.display='none';
+    // Hint pill: bottom-anchored above the HUD, fades out so it never lingers mid-map.
+    this._coach(step.coach||null);
+    this._coachLift();
   }
   celebrate(reward){
     this.doneSub.textContent=`+${reward.gold}🪙 +${reward.wood}🪵 ${reward.achievement} added to your kingdom.`;

@@ -11,7 +11,7 @@ export class Renderer{
     this.scene.fog=new THREE.Fog(0x1c130c,70,160);
     const asp=container.clientWidth/Math.max(1,container.clientHeight);
     this.camera=new THREE.PerspectiveCamera(46,asp,0.1,400);
-    this.target=new THREE.Vector3(0,0,0); this.dist=62; this.yaw=0.78; this.pitch=0.96;
+    this.target=new THREE.Vector3(0,0,0); this.dist=56; this.yaw=0.78; this.pitch=0.96;
     this.renderer=new THREE.WebGLRenderer({antialias:true});
     this.renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
     this.renderer.shadowMap.enabled=true; this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -60,7 +60,7 @@ export class Renderer{
   }
   // Fixed-camera distance + FOV by aspect. Vertical FOV widens on tall phones so
   // the whole clearing stays reachable by thumb without moving the camera.
-  camDistFor(aspect){ return aspect<0.75?42:(aspect<1.2?38:30); }
+  camDistFor(aspect){ return aspect<0.75?39:(aspect<1.2?35:28); }
   fovFor(aspect){ return aspect<0.75?60:(aspect<1.2?50:46); }
   resize(){
     const w=this.container.clientWidth,h=this.container.clientHeight;
