@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#04060d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="description" content="Neon Vanguard — a mobile-first Three.js wave-defense shooter with touch controls and optional gyro aim." />
+  <title>Neon Vanguard — Sector 7</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2304060d'/%3E%3Cpath d='M32 6 54 20v24L32 58 10 44V20z' fill='none' stroke='%2346f3ff' stroke-width='3'/%3E%3Cpath d='M32 18 44 26v12L32 46 20 38V26z' fill='none' stroke='%23ff2fd0' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='3' fill='%2346f3ff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <canvas id="scene" aria-label="Neon Vanguard game view"></canvas>
+
+  <div class="hud" id="hud">
+    <div class="hud-top">
+      <div class="vitals">
+        <div class="vitals-row">
+          <span class="vitals-label">INTEGRITY</span>
+          <span class="vitals-value" id="healthValue">100</span>
+        </div>
+        <div class="bar"><div class="bar-fill health-fill" id="healthBar"></div></div>
+        <div class="status-line"><span class="dot"></span><span id="statusText">SECTOR 7 // STANDBY</span></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-label">SCORE</span><span class="stat-value" id="scoreValue">0</span></div>
+        <div class="stat"><span class="stat-label">WAVE</span><span class="stat-value" id="waveValue">1</span></div>
+      </div>
+    </div>
+
+    <div class="radar-wrap">
+      <div class="radar-label">PROXIMITY</div>
+      <canvas id="radar" width="176" height="176"></canvas>
+    </div>
+
+    <div class="ammo">
+      <div class="ammo-label">PULSE RIFLE</div>
+      <div class="ammo-value"><span id="ammoValue">30</span><span class="ammo-max">/ 30</span></div>
+      <div class="ammo-pips" id="ammoPips"></div>
+      <div class="reload-hint" id="reloadHint">R // RELOAD</div>
+    </div>
+
+    <div class="crosshair" id="crosshair">
+      <span class="ch ch-t"></span><span class="ch ch-r"></span><span class="ch ch-b"></span><span class="ch ch-l"></span><span class="ch-dot"></span>
+    </div>
+    <div class="hitmarker" id="hitmarker"><span></span><span></span><span></span><span></span></div>
+    <div class="banner" id="banner"><span class="banner-kicker">INCOMING</span><span class="banner-main">WAVE 1</span></div>
+    <div class="vignette" id="vignette"></div>
+    <div class="toast" id="toast"></div>
+
+    <div class="touch-ui" id="touchUi">
+      <div class="stick-zone" id="stickZone">
+        <div class="stick-base"><div class="stick-ring"></div><div class="stick-knob" id="stickKnob"></div></div>
+        <div class="stick-hint">MOVE</div>
+      </div>
+      <div class="touch-actions">
+        <button class="tbtn tbtn-tilt" id="tiltBtn" type="button" aria-label="Toggle tilt aim">TILT<br /><small>OFF</small></button>
+        <button class="tbtn tbtn-reload" id="reloadBtn" type="button" aria-label="Reload">RELOAD</button>
+        <button class="tbtn tbtn-jump" id="jumpBtn" type="button" aria-label="Jump">JUMP</button>
+        <button class="tbtn tbtn-fire" id="fireBtn" type="button" aria-label="Fire">FIRE</button>
+      </div>
+      <div class="look-hint" id="lookHint">DRAG TO AIM</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="menu-grid"></div>
+    <div class="menu-card">
+      <div class="eyebrow">SECTOR 7 // NEON DEFENSE INITIATIVE</div>
+      <h1>NEON<span>VANGUARD</span></h1>
+      <p class="lede">Hold the line against the machine swarm. Bank combos, chain headshots, and survive escalating waves inside the last lit arena on the grid.</p>
+      <div class="menu-actions">
+        <button class="cta" id="startBtn" type="button">Start Game</button>
+        <button class="ghost" id="menuTiltBtn" type="button">Enable Tilt Aim</button>
+      </div>
+      <div class="menu-meta">
+        <div><b>DESKTOP</b><span>WASD move · Mouse aim · Click fire · R reload · Space jump</span></div>
+        <div><b>PHONE / TABLET</b><span>Left stick move · Right drag aim · FIRE / JUMP / RELOAD</span></div>
+        <div><b>GYRO</b><span>Optional tilt aim · iOS asks for motion permission</span></div>
+      </div>
+      <div class="menu-foot"><span id="tiltStatus">Tilt: available on supported devices</span><span class="ver">BUILD 7.4.1</span></div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="pause">
+    <div class="panel">
+      <div class="eyebrow">SIMULATION PAUSED</div>
+      <h2>HOLD POSITION</h2>
+      <p>Re-enter the arena when you are ready. Your run is saved for this wave.</p>
+      <div class="menu-actions">
+        <button class="cta" id="resumeBtn" type="button">Resume</button>
+        <button class="ghost" id="pauseTiltBtn" type="button">Enable Tilt Aim</button>
+      </div>
+      <div class="panel-stats"><span>SCORE <b id="pauseScore">0</b></span><span>WAVE <b id="pauseWave">1</b></span></div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="gameover">
+    <div class="panel danger">
+      <div class="eyebrow">SIGNAL LOST</div>
+      <h2>ARENA OVERRUN</h2>
+      <p id="overMessage">The swarm broke through. Recalibrate and try again.</p>
+      <div class="panel-stats"><span>FINAL SCORE <b id="finalScore">0</b></span><span>WAVES CLEARED <b id="finalWave">0</b></span></div>
+      <div class="menu-actions"><button class="cta" id="restartBtn" type="button">Play Again</button></div>
+    </div>
+  </div>
+
+  <div class="rotate-hint" id="rotateHint">
+    <div class="rotate-icon"></div>
+    <b>ROTATE FOR WIDESCREEN</b>
+    <span>Neon Vanguard plays best in landscape.</span>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
