@@ -1,12 +1,12 @@
 // AI: economy + scouting + expansion + army composition + attacks + defense + personality.
-import { alive, canAfford, pay, popCap } from '../core/engine.js';
+import { alive, canAfford, pay, popCap, g2w, GRID } from '../core/engine.js';
 import { BUILDINGS, UNITS } from '../buildings/data.js';
 import { factionMult } from '../factions/factions.js';
 import { orderMove, orderAttack, orderGather, orderBuild, findResource, nearestHall, spawnBase } from '../sim/sim.js';
 import { addEntity } from '../core/engine.js';
 
 export const PERSONAS={
-  aggressor:{name:'Aggressor',barracksAt:1,warriors:8,attackAt:150,desc:'early pressure'},
+  aggressor:{name:'Aggressor',barracksAt:1,warriors:5,attackAt:180,desc:'early pressure'},
   turtle:{name:'Defender',barracksAt:3,towers:3,warriors:6,attackAt:420,desc:'turtles then pushes'},
   expander:{name:'Expander',barracksAt:2,farms:3,warriors:10,attackAt:300,desc:'booms economy'},
 };
@@ -15,7 +15,7 @@ export function aiTick(st,map){
   const O=1; if(st.over) return;
   const fm=factionMult(st.aiFaction);
   const peasants=st.entities.filter(e=>e.owner===O&&e.type==='peasant'&&alive(e));
-  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight')&&alive(e));
+  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton')&&alive(e));
   const halls=st.entities.filter(e=>e.owner===O&&e.type==='townhall'&&alive(e));
   if(!halls.length) return;
   const hall=halls[0];
@@ -30,7 +30,7 @@ export function aiTick(st,map){
 
   // 2) assign idle peasants: ~60% wood, 40% gold
   peasants.forEach((p,i)=>{
-    if(p.order&&(p.order.kind==='gather'||p.order.kind==='build'))return;
+    if(p.order&&(p.order.kind==='gather'||p.order.kind==='build'||p.order.kind==='move'))return;
     const kind2=(i%5<2)?'gold':'tree';
     const idx=findResource(map,p.x,p.z,kind2,st);
     if(idx>=0) orderGather(st,map,p,kind2,idx);
@@ -48,7 +48,7 @@ export function aiTick(st,map){
   if(wish&&inQueue()<2&&canAfford(st,O,BUILDINGS[wish].cost,fm)){
     pay(st,O,BUILDINGS[wish].cost,fm);
     const a=Math.random()*6.28,dd=7+Math.random()*4;
-    const b=addEntity(st,{cat:'bld',type:wish,owner:O,x:clamp(hall.x+Math.cos(a)*dd),z:clamp(hall.z+Math.sin(a)*dd),hp:1,maxHp:BUILDINGS[wish].hp*fm.hp,done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
+    const b=addEntity(st,{cat:'bld',type:wish,owner:O,faction:st.aiFaction,x:clamp(hall.x+Math.cos(a)*dd),z:clamp(hall.z+Math.sin(a)*dd),hp:1,maxHp:BUILDINGS[wish].hp*fm.hp*(fm.bldHp??1),done:false,prog:0,time:BUILDINGS[wish].time,builder:false,size:BUILDINGS[wish].size,sight:BUILDINGS[wish].sight,armor:1,queue:[],cool:0});
     const builder=peasants.find(p=>!p.building);
     if(builder) orderBuild(st,builder,b.id); else b.builder=true;
   }
@@ -76,6 +76,23 @@ export function aiTick(st,map){
   // 6) defense: if enemy near base, pull half army back
   const invader=st.entities.find(e=>e.owner===0&&e.cat==='unit'&&alive(e)&&Math.hypot(e.x-hall.x,e.z-hall.z)<18);
   if(invader){ army.slice(0,Math.ceil(army.length/2)).forEach(u=>{u.order={kind:'attack',id:invader.id};}); }
+
+  // 7) scouting: a spare body walks into the fog every ~45s
+  if(st.t-(st._scoutT??0)>45){
+    st._scoutT=st.t;
+    const spot=unexploredSpot(map,O);
+    if(spot){
+      const scout=army.find(u=>!u.order||u.order.kind==='idle')||peasants.find(p=>!p.order||p.order.kind==='idle');
+      if(scout) orderMove(st,scout,spot.x,spot.z,false);
+    }
+  }
+}
+function unexploredSpot(map,owner){
+  for(let i=0;i<60;i++){
+    const gx=(Math.random()*GRID)|0, gz=(Math.random()*GRID)|0;
+    if(!map.explored?.[owner]?.[gz*GRID+gx]) return {x:g2w(gx),z:g2w(gz)};
+  }
+  return null;
 }
 function usedPop(st,O){ return st.entities.filter(e=>e.owner===O&&e.cat==='unit'&&!e.dead).reduce((s,e)=>s+(UNITS[e.type].pop||1),0); }
 function clamp(v){ return Math.max(-44,Math.min(44,v)); }

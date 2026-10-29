@@ -3,11 +3,13 @@ import { addEntity, byId, alive, dist, eachNear, dealDamage, popCap, pay, canAff
 import { BUILDINGS, UNITS, trainableAt } from '../buildings/data.js';
 import { factionMult } from '../factions/factions.js';
 import { findPath, buildBlocked, updateFog } from '../world/world.js';
+import { useAbility } from './abilities.js';
 
 export function spawnBase(st,map,owner,fx,fz,faction){
   const fm=factionMult(faction);
-  const th=addEntity(st,{cat:'bld',type:'townhall',owner,x:fx,z:fz,hp:1600*fm.hp,maxHp:1600*fm.hp,done:true,size:3.4,sight:12,armor:2,queue:[],prog:0});
-  for(let i=0;i<2;i++) addEntity(st,{cat:'unit',type:'peasant',owner,x:fx+4+i*2.5,z:fz+4,hp:70*fm.hp,maxHp:70*fm.hp,dmg:4,armor:0,speed:5.2,sight:9,order:null,carry:null,carryAmt:0,cool:0});
+  const thHp=1600*fm.hp*(fm.bldHp??1);
+  const th=addEntity(st,{cat:'bld',type:'townhall',owner,faction,x:fx,z:fz,hp:thHp,maxHp:thHp,done:true,size:3.4,sight:12,armor:2,queue:[],prog:0});
+  for(let i=0;i<2;i++) addEntity(st,{cat:'unit',type:'peasant',owner,faction,x:fx+4+i*2.5,z:fz+4,hp:70*fm.hp,maxHp:70*fm.hp,dmg:4,armor:0,speed:5.2,sight:9,armorPierce:0,order:null,carry:null,carryAmt:0,cool:0});
   return th;
 }
 
@@ -20,20 +22,32 @@ export function tick(st,map,dt){
   if(blockedTick!==st.tick){ blockedCache=buildBlocked(st,map); blockedTick=st.tick; }
 
   // economy trickle: farms give food
-  if(st.tick%50===0){ for(let o=0;o<2;o++){ const farms=st.entities.filter(e=>e.owner===o&&e.type==='farm'&&e.done&&alive(e)).length; st.res[o].food+=farms*1; } }
+  if(st.tick%50===0){ for(let o=0;o<2;o++){ const farms=st.entities.filter(e=>e.owner===o&&e.type==='farm'&&e.done&&alive(e)).length; st.res[o].food+=farms*1; }
+    // Wilde signature: the forest regrows under their care.
+    if(fm[0].regrow||fm[1].regrow){ for(const tr of map.trees){ if(tr.amount>0&&tr.amount<180) tr.amount=Math.min(180,tr.amount+2); } }
+  }
+  // Three Bells pacing: 3:00 raid, 6:00 turn, 9:00 war. Tutorial has no clock.
+  const bellAt=st.tutorial?undefined:[180,360,540][st.bells||0];
+  if(bellAt!==undefined&&st.t>=bellAt){
+    st.bells=(st.bells||0)+1;
+    const msg=st.bells===1?'🔔 First Bell — the raid begins!':st.bells===2?'🔔 Second Bell — the map turns.':'🔔 Third Bell — war without end!';
+    st.events.push({t:'toast',msg});
+    st.events.push({t:'bell',n:st.bells});
+  }
 
   for(const e of st.entities){
     if(e.dead) continue;
     if(e.flash>0)e.flash-=dt;
     if(e.cat==='bld'){
+      if(e.repair>0){ e.repair-=dt; e.hp=Math.min(e.maxHp,e.hp+e.repairRate*dt); }
       // construction progress
       if(!e.done){ e.prog+=(dt/e.time)*(e.builder?1:0.15); if(e.prog>=1){e.done=true;e.prog=1;e.hp=e.maxHp;st.events.push({t:'toast',msg:`${e.owner===0?'✅':'🏗️'} ${BUILDINGS[e.type].name} ${e.owner===0?'ready!':'built by enemy!'}`});} continue; }
       // production queue
       if(e.queue&&e.queue.length){
-        const u=e.queue[0]; e.prog+=dt/UNITS[u].time;
+        const u=e.queue[0]; e.prog+=dt*(fm[e.owner].produce??1)/UNITS[u].time;
         if(e.prog>=1){ e.queue.shift(); e.prog=0;
           const f=fm[e.owner];
-          addEntity(st,{cat:'unit',type:u,owner:e.owner,x:e.x+2.5,z:e.z+2.5,hp:UNITS[u].hp*f.hp,maxHp:UNITS[u].hp*f.hp,dmg:UNITS[u].dmg*(u==='archer'?(f.archer??f.dmg):f.dmg)*(e.buffDmg||1),armor:UNITS[u].armor,speed:UNITS[u].speed*f.speed,sight:UNITS[u].sight,order:null,carry:null,carryAmt:0,cool:0});
+          addEntity(st,{cat:'unit',type:u,owner:e.owner,faction:e.faction,x:e.x+2.5,z:e.z+2.5,hp:UNITS[u].hp*f.hp,maxHp:UNITS[u].hp*f.hp,dmg:UNITS[u].dmg*(u==='archer'?(f.archer??f.dmg):f.dmg)*(e.buffDmg||1),armor:UNITS[u].armor,range:UNITS[u].range,speed:UNITS[u].speed*f.speed,sight:UNITS[u].sight,armorPierce:UNITS[u].armorPierce||0,order:null,carry:null,carryAmt:0,cool:0});
         }
       }
       // tower shooting
@@ -41,7 +55,25 @@ export function tick(st,map,dt){
       // blacksmith instant buff
       if(e.type==='blacksmith'&&!e.applied){ e.applied=true; for(const u of st.entities) if(u.owner===e.owner&&u.cat==='unit'){u.dmg+=2;u.maxHp+=20;u.hp+=20;} }
     } else {
-      // unit AI
+      // unit AI: abilities, buffs, burn, regen, then movement/combat
+      if(e.abilityCd>0) e.abilityCd-=dt;
+      if(e.buff){ for(const k in e.buff){ e.buff[k]-=dt; if(e.buff[k]<=0) delete e.buff[k]; } }
+      if(e.burn&&e.burn.t>0){
+        e.burn.t-=dt; e.hp-=e.burn.dps*dt;
+        if(e.hp<=0){ e.hp=0; e.dead=true; e.deathT=0.6; continue; }
+      }
+      const efm=fm[e.owner];
+      if(efm.regen&&e.hp<e.maxHp){
+        let threat=false;
+        for(const o of st.entities){
+          if(o.dead||o.owner===e.owner||o.owner===2||o.cat==='proj') continue;
+          if(Math.hypot(o.x-e.x,o.z-e.z)<9){ threat=true; break; }
+        }
+        if(!threat) e.hp=Math.min(e.maxHp,e.hp+efm.regen*dt);
+      }
+      if(e.owner===1&&(e.abilityCd||0)<=0&&(e.type==='warrior'||e.type==='archer'||e.type==='knight')){
+        if(nearestEnemy(st,e,10,e.owner)) useAbility(st,e);
+      }
       e.cool-=dt;
       updateUnit(st,map,e,dt,fm[e.owner],blockedCache);
       // QoL: idle player peasants auto-seek wood after 6s (classic RTS behavior).
@@ -82,8 +114,8 @@ function nearestEnemy(st,e,range,owner){
 function updateUnit(st,map,e,dt,fm,blocked){
   const o=e.order;
   // auto-acquire for military
-  if((e.type==='warrior'||e.type==='archer'||e.type==='knight')&&(!o||o.kind==='move'||o.kind==='idle')){
-    if(e.cool<=0){ const tgt=nearestEnemy(st,e,e.type==='archer'?9:4,e.owner); if(tgt){ e.order={kind:'attack',id:tgt.id}; } }
+  if((e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton')&&(!o||o.kind==='move'||o.kind==='idle')){
+    if(e.cool<=0){ const tgt=nearestEnemy(st,e,(e.type==='archer'?9:4)*(e.type==='archer'?(fm.range??1):1),e.owner); if(tgt){ e.order={kind:'attack',id:tgt.id}; } }
   }
   if(!o){ e.order={kind:'idle'}; return; }
   if(o.kind==='idle')return;
@@ -98,20 +130,27 @@ function updateUnit(st,map,e,dt,fm,blocked){
   if(o.kind==='attack'){
     const tgt=byId(st,o.id);
     if(!tgt||tgt.dead){e.order={kind:'idle'};return;}
-    const range=(UNITS[e.type].range||1.6);
+    const range=(UNITS[e.type].range||1.6)*(e.type==='archer'?(fm.range??1):1);
+    const reach=range+(tgt.cat==='bld'?(tgt.size||0):0);
     const d=Math.hypot(tgt.x-e.x,tgt.z-e.z);
-    if(d<=range){
+    if(d<=reach){
       if(e.cool<=0){
         e.cool=e.type==='archer'?1.3:1.0;
-        if(e.type==='archer') fireProjectile(st,e,tgt,e.dmg);
-        else { dealDamage(st,e,tgt,e.dmg); st.events.push({t:'hit',x:tgt.x,z:tgt.z}); }
+        let dmg=e.dmg;
+        if(e.chargeHit){ dmg*=1.5; e.chargeHit=false; }
+        if(e.type==='archer') fireProjectile(st,e,tgt,dmg);
+        else { dealDamage(st,e,tgt,dmg); st.events.push({t:'hit',x:tgt.x,z:tgt.z}); }
         e.face=tgt;
       }
     } else {
-      o.path=null; const tmp={kind:'move',x:tgt.x,z:tgt.z,path:null,pi:0,chase:true};
-      if(!tmp.path) tmp.path=findPath(w2g(e.x),w2g(e.z),w2g(tgt.x),w2g(tgt.z),blocked)||[{x:tgt.x,z:tgt.z}];
-      const wp=tmp.path[0]; if(wp) moveToward(e,wp,dt);
-      if(Math.hypot(tgt.x-e.x,tgt.z-e.z)>range+14) e.order={kind:'idle'};
+      if(!o.path||(o.chaseT??0)<=0){
+        o.path=findPath(w2g(e.x),w2g(e.z),w2g(tgt.x),w2g(tgt.z),blocked)||[{x:tgt.x,z:tgt.z}];
+        o.pi=0; o.chaseT=0.5;
+      }
+      o.chaseT-=dt;
+      const wp=o.path[o.pi];
+      if(wp&&moveToward(e,wp,dt)){ o.pi++; if(o.pi>=o.path.length){o.path=null;o.chaseT=0;} }
+      if(Math.hypot(tgt.x-e.x,tgt.z-e.z)>reach+14) e.order={kind:'idle'};
     }
     return;
   }
@@ -130,7 +169,7 @@ function updateUnit(st,map,e,dt,fm,blocked){
       if(!hall){e.order={kind:'idle'};return;}
       if(Math.hypot(hall.x-e.x,hall.z-e.z)<4){
         const rkey=o.kind2==='gold'?'gold':'wood';
-        const mult=o.kind2==='gold'?(fm.gold??1):(fm.wood??1);
+        const mult=(o.kind2==='gold'?(fm.gold??1):(fm.wood??1))*(fm.gather??1);
         st.res[e.owner][rkey]+=e.carryAmt*mult; e.carryAmt=0; e.carry=null;
         st.events.push({t:'gather',x:e.x,z:e.z,kind:o.kind2});
       } else moveToward(e,hall,dt);
@@ -152,7 +191,7 @@ function updateUnit(st,map,e,dt,fm,blocked){
 function moveToward(e,wp,dt){
   const dx=wp.x-e.x,dz=wp.z-e.z,d=Math.hypot(dx,dz);
   if(d<0.4) return true;
-  const sp=(e.speed||5)*dt;
+  const sp=(e.speed||5)*(e.buff?.charge>0?2.2:1)*dt;
   e.x+=dx/d*Math.min(sp,d); e.z+=dz/d*Math.min(sp,d);
   e.face={x:wp.x,z:wp.z};
   return d<0.6;
@@ -176,5 +215,5 @@ export function nearestHall(st,owner,x,z){
   return best;
 }
 export function fireProjectile(st,src,tgt,dmg){
-  st.entities.push({id:(Math.random()*1e9)|0,cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2});
+  st.entities.push({id:(Math.random()*1e9)|0,cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2,armorPierce:src.armorPierce||0});
 }

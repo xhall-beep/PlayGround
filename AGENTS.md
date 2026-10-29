@@ -37,7 +37,9 @@ Adding a root `package.json` flips the deploy path to Vite and `start.sh` will r
 
 - **Engine owns state, presentation owns pixels.** `core/engine.js` holds a plain-object `st` + entity list; `sim/sim.js:tick()` is the only mutator; `main.js:loop()` is a fixed 10 Hz accumulator (`STEP=0.1`, max 5 substeps/frame) decoupled from `requestAnimationFrame`.
 - **Resource keys are `gold` / `wood` only.** Never write `st.res[o][kind]` with a raw kind string — `gather` carries `kind2:'gold'|'tree'` and must map `tree → wood` in the deposit branch. This exact bug shipped once.
-- **Faction scaling** goes through `factionMult(owner)` → keys `hp/dmg/cost/speed/build/archer/wood/gold`; missing keys must fall back (`?? 1`).
+- **Faction scaling** goes through `factionMult(owner)` → keys `hp/dmg/cost/speed/build/archer/wood/gold` plus signature keys `gather/produce/range/bldHp/regen/regrow/burn/raise`; missing keys must fall back (`?? 1`).
+- **Military abilities** live in `src/sim/abilities.js` (`rally/volley/charge/repair`): AI auto-casts from `tick()`, the player uses the command-card button (`data-a="ability"`); cooldowns/buffs/burn/regen are per-entity fields consumed in `sim.tick`.
+- **Three Bells pacing** is raised inside `sim.tick()` at 180/360/540s into `st.bells` with `{t:'bell'}` events (suppressed while `st.tutorial`); `#bellPill` counts down to the next bell and the Aggressor attacks on the First Bell.
 - **Mission layer (`src/missions/`)** is strictly a *reader* of engine state: steps expose `done(ctx)`, `progress(ctx)`, `progressText(ctx)`, `mark`; `MissionRunner.tick()` returns `step-done` / `step-start` / `mission-done` events. It must not mutate the sim — assists go through the exported `order*` functions.
 - **Camera**: `renderer.setFixedCamera(on,x,z,dist)` locks framing; `camDistFor`/`fovFor(aspect)` size it per orientation. Input no-ops pan/pinch when `game.isCameraLocked()`.
 - **Save/load**: `localStorage` keys `kingdoms-rts-save-v1` (game) and `kingdoms-rts-profile-v1` (meta: wins/losses/achievements/missions).
@@ -67,6 +69,8 @@ Adding a root `package.json` flips the deploy path to Vite and `start.sh` will r
 10. **Reload after editing.** The static server sends `no-cache` without validators, and edited ES modules were observed serving stale — `playwright-cli reload` before re-testing.
 11. **Don't `git add -A` blindly**: `kingdoms-rts/` is an untracked 5 MB reference clone and is *not* in `.gitignore`.
 12. **Never gate UI on `st.tick%N===0` in `loop()`** — on slow frames (headless SwiftShader ≈10 fps, `dt` clamps to 0.1) `acc` overshoots the 5-substep cap, `st.tick` advances by a fixed +5 stride per frame, and the residue never reaches 0: mission bar, coach mark, and sel-card refresh all freeze while the sim keeps running. `st.tick%N` is safe *inside* `tick()` (per-tick); frame-level throttles must use wall-clock accumulators (`uiAcc`, `selAcc`) and `acc` must be clamped after the while loop.
+13. **Tutorial placement must keep the trained unit's spawn on-screen** — the fixed camera shows a rotated square; a barracks placed toward +x/+z spawns its warrior below the viewport (seen at screen y≈850 on an 844px portrait view). `onCardBtn` biases tutorial sites toward the hall and shrinks until both the site and its `+2.5/+2.5` spawn offset are inside the safe band (above the card in portrait, just on-screen in landscape). Melee reach also adds `tgt.size` so units can hit building centers.
+14. **Chase paths must advance their node index** — the old attack branch rebuilt a temp path every tick and only ever moved toward `path[0]`; a unit standing on a cell center (waypoint distance 0) froze forever. Keep `o.path/o.pi` on the order and recompute on a `chaseT` throttle; `attackmove` already advances `pi`.
 
 ## Browser verification recipe
 

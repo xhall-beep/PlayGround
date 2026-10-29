@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { makeState, addEntity, byId, alive, reseedUID, saveGame, loadGame, wipeSave, getProfile, setProfile, popCap, ownerPop, canAfford, pay, WORLD, CELL, GRID } from './core/engine.js';
 import { genMap, updateFog } from './world/world.js';
 import { tick, spawnBase, orderMove, orderAttack, orderGather, findResource } from './sim/sim.js';
+import { abilityFor, useAbility } from './sim/abilities.js';
 import { aiTick } from './ai/ai.js';
 import { FACTIONS, factionMult } from './factions/factions.js';
 import { BUILDINGS, UNITS, trainableAt } from './buildings/data.js';
@@ -216,6 +217,9 @@ function renderSel(forceBuild=false){
     if(e.owner===0){
       html+=`<div class="btnrow">`;
       if(e.type==='peasant') html+=`<button data-a="build">🔨 Build</button><button data-a="wood">🪓 Wood</button><button data-a="gold">⛏️ Gold</button>`;
+      const ab=abilityFor(e);
+      const noRepair=ab?.id==='repair'&&!st.entities.some(x=>x.owner===0&&x.cat==='bld'&&!x.dead&&x.hp<x.maxHp);
+      if(ab&&!noRepair){ const cd=e.abilityCd||0; html+=`<button data-a="ability" ${cd>0?'disabled':''}>${ab.icon} ${ab.name}${cd>0?` ${Math.ceil(cd)}s`:''}</button>`; }
       html+=`<button data-a="stop">⏹ Stop</button></div><div class="btnrow" data-pane="build" style="display:${forceBuild?'flex':'none'}">`;
       for(const [k,b] of Object.entries(BUILDINGS)){ if(k==='townhall')continue; const c=`${Math.ceil((b.cost.gold||0)*fm.cost)}🪙 ${Math.ceil((b.cost.wood||0)*fm.cost)}🪵`; html+=`<button data-b="${k}">${b.icon} ${b.name}<br><small>${c} · ${b.time}s</small></button>`; }
       html+=`</div>`;
@@ -238,6 +242,7 @@ function onCardBtn(b,e,forceBuild){
   const fm=factionMult(st.playerFaction);
   const a=b.dataset.a, u=b.dataset.u, bb=b.dataset.b;
   if(a==='stop'){ [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.cat==='unit')x.order={kind:'idle'};}); }
+  if(a==='ability'&&e.cat==='unit'){ const ab=abilityFor(e); if(ab&&useAbility(st,e)){ sfx.build(); toast(`${ab.icon} ${ab.name}!`); } }
   if(a==='build'){ const p=cardPane(); if(p)p.style.display=p.style.display==='none'?'flex':'none'; }
   if(a==='wood'||a==='gold'){ const kind2=a==='gold'?'gold':'tree'; [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.type==='peasant'){const i=findResource(map,x.x,x.z,kind2,st); if(i>=0)orderGather(st,map,x,kind2,i);}}); sfx.move(); }
   if(a==='pause'){ paused=!paused; toast(paused?'⏸ Paused — SP safe. Tap Resume to continue.':'▶ Resumed'); renderSel(); }
@@ -255,14 +260,20 @@ function onCardBtn(b,e,forceBuild){
     pay(st,0,BUILDINGS[bb].cost,fm);
     let px=Math.max(-42,Math.min(42,peas.x+4+Math.random()*2)),pz=Math.max(-42,Math.min(42,peas.z+4));
     if(st.tutorial&&renderer){
+      // Keep the whole loop (site → trained unit spawn → tap) inside the fixed
+      // camera. Bias toward the hall, then shrink until the site and its spawn
+      // offset are comfortably on screen above the selection card.
+      const hall=st.entities.find(x=>x.owner===0&&x.type==='townhall'&&!x.dead);
+      if(hall){ px=peas.x+(hall.x-peas.x)*0.55+2; pz=peas.z+(hall.z-peas.z)*0.55+2; }
       const vw=renderer.renderer.domElement.getBoundingClientRect();
-      const inside=(p)=>p.x>=vw.left+28&&p.x<=vw.right-28&&p.y>=vw.top+28&&p.y<=vw.bottom-28;
-      for(let i=0;i<24&&Math.hypot(px,pz)>4;i++){
-        if(inside(renderer.screenOf(px,1,pz))&&inside(renderer.screenOf(px+2.5,1,pz+2.5))) break;
-        px*=0.9; pz*=0.9;
+      const bottomPad=vw.height>vw.width?230:60;
+      const inside=(p)=>p.x>=vw.left+40&&p.x<=vw.right-40&&p.y>=vw.top+70&&p.y<=vw.bottom-bottomPad;
+      for(let i=0;i<40;i++){
+        if(inside(renderer.screenOf(px,1,pz))&&inside(renderer.screenOf(px+2.5,1,pz+2.5))&&Math.hypot(px,pz)<=6) break;
+        px*=0.92; pz*=0.92;
       }
     }
-    const nb=addEntity(st,{cat:'bld',type:bb,owner:0,x:px,z:pz,hp:1,maxHp:BUILDINGS[bb].hp*fm.hp,done:false,prog:0,time:BUILDINGS[bb].time/fm.build,builder:false,size:BUILDINGS[bb].size,sight:BUILDINGS[bb].sight,armor:1,queue:[],cool:0});
+    const nb=addEntity(st,{cat:'bld',type:bb,owner:0,faction:st.playerFaction,x:px,z:pz,hp:1,maxHp:BUILDINGS[bb].hp*fm.hp*(fm.bldHp??1),done:false,prog:0,time:BUILDINGS[bb].time/fm.build,builder:false,size:BUILDINGS[bb].size,sight:BUILDINGS[bb].sight,armor:1,queue:[],cool:0});
     peas.order={kind:'build',id:nb.id};
     sfx.build(); toast(`${BUILDINGS[bb].icon} ${BUILDINGS[bb].name} placed — peasant on the way!`);
     sel=new Set([nb.id]);
@@ -282,6 +293,9 @@ function hud(){
   $('r-pop').textContent=`${ownerPop(st,0)}/${popCap(st,0)}`;
   $('r-army').textContent=`${st.entities.filter(e=>e.owner===0&&e.cat==='unit'&&e.type!=='peasant'&&!e.dead).length}`;
   const m=(st.t/60)|0,s=(st.t%60)|0; $('timer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${st.tutorial?'':` · ${st.aiPersona}`}`;
+  const bellNext=[180,360,540][st.bells||0];
+  if(st.tutorial||bellNext===undefined){ $('bellPill').style.display='none'; }
+  else { $('bellPill').style.display=''; const left=Math.max(0,bellNext-st.t); $('r-bell').textContent=`${(left/60)|0}:${String(Math.ceil(left%60)).padStart(2,'0')}`; }
   // minimap
   mm.fillStyle='#0c0a06'; mm.fillRect(0,0,MM,MM);
   const px=v=>((v+48)/96)*MM;
@@ -302,7 +316,7 @@ function loop(now){
   if(!paused&&!st.over){
     acc+=dt*st.speed;
     const STEP=0.1; let n=0;
-    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); }); acc-=STEP; n++;
+    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); if(ev.t==='bell')sfx.bell(); }); acc-=STEP; n++;
       aiAcc+=STEP; if(aiAcc>2){aiAcc=0; if(!st.tutorial){try{aiTick(st,map);}catch(err){console.warn(err);}} }
     }
     saveAcc+=dt; if(saveAcc>15){saveAcc=0; if(!st.tutorial)saveGame(st,map);}
@@ -337,11 +351,11 @@ function onMissionComplete(reward){
 }
 let selLive=0, lastSig='';
 function renderSelLive(){ // rebuild at ~1Hz only when something visible changed (never steal a tap)
-  if(++selLive%10!==0)return;
+  if(++selLive%2!==0)return;
   if($('selcard').style.display==='none'||!sel.size) return;
   const e=[...sel].map(id=>byId(st,id)).find(x=>x&&!x.dead);
   if(!e) return;
-  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),st.res[0].gold|0,st.res[0].wood|0,paused?'p':''].join('|');
+  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),(e.abilityCd||0).toFixed(1),st.res[0].gold|0,st.res[0].wood|0,(st.entities.some(x=>x.owner===0&&x.cat==='bld'&&!x.dead&&x.hp<x.maxHp)?1:0),paused?'p':''].join('|');
   if(sig===lastSig) return; lastSig=sig;
   const paneOpen=!!document.querySelector('#selcard [data-pane="build"]')&&document.querySelector('#selcard [data-pane="build"]').style.display!=='none';
   renderSel(paneOpen);

@@ -6,7 +6,7 @@ let UID = 1;
 export function reseedUID(st){ let m=0; for(const e of st.entities) if(typeof e.id==='number'&&e.id>m)m=e.id; UID=Math.max(UID,m+1); }
 export function makeState(opts){
   return {
-    t:0, tick:0, over:null, speed:Number(opts.speed||1),
+    t:0, tick:0, over:null, speed:Number(opts.speed||1), bells:0,
     fog: opts.fog!=='off',
     playerFaction: opts.faction||'human', aiFaction: opts.aiFaction||'undead',
     aiPersona: opts.ai||'expander',
@@ -53,13 +53,26 @@ export function eachNear(st,x,z,rad,fn){
 export function dealDamage(st,src,tgt,baseDmg){
   if(!alive(tgt)||st.over) return;
   const armor = tgt.armor||0;
-  let d = Math.max(1, baseDmg - armor);
+  const pierce = src?.armorPierce||0;
+  let d = Math.max(1, baseDmg - armor*(1-pierce));
+  if(src?.buff?.rally>0) d *= 1.4;
+  if(tgt.buff?.rally>0) d = Math.max(1, d-2);
   tgt.hp -= d; tgt.flash=0.25;
   if(tgt.hp<=0){ tgt.hp=0; tgt.dead=true; tgt.deathT=0.6;
     if(tgt.cat==='unit') st.stats.kills[src.owner===0?0:1]+=0; // kills counted by killer below
     if(src&&src.owner!==undefined&&tgt.cat==='unit'){ st.stats.kills[src.owner]+=1; if(!st.firstBlood){st.firstBlood=true; st.events.push({t:'toast',msg:`🩸 First blood — ${src.owner===0?'you strike!':'enemy strikes!'}`});} }
     if(tgt.cat==='bld'&&tgt.done){ st.events.push({t:'toast',msg:`${tgt.owner===0?'😱 Your':'🔥 Enemy'} ${BUILDINGS[tgt.type]?.name||tgt.type} destroyed!`}); }
     if(tgt.type==='townhall'){ checkGameOver(st); }
+    // Faction signatures: Undead raise the slain, Demon strikes leave a burn.
+    if(src&&src.owner!==undefined&&tgt.cat==='unit'){
+      const kf=factionMult(src.owner===0?st.playerFaction:st.aiFaction);
+      if(kf.burn) tgt.burn={t:3,dps:2,owner:src.owner};
+      if(kf.raise&&Math.random()<kf.raise){
+        const u=UNITS.skeleton;
+        addEntity(st,{cat:'unit',type:'skeleton',owner:src.owner,x:tgt.x+(Math.random()*2-1),z:tgt.z+(Math.random()*2-1),hp:u.hp*kf.hp,maxHp:u.hp*kf.hp,dmg:u.dmg*kf.dmg,armor:u.armor,range:u.range,speed:u.speed*kf.speed,sight:u.sight,armorPierce:u.armorPierce||0,order:null,carry:null,carryAmt:0,cool:0});
+        st.events.push({t:'toast',msg:'💀 A skeleton rises!'});
+      }
+    }
   }
 }
 export function checkGameOver(st){
