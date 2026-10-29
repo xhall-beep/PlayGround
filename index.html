@@ -15,7 +15,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .pill b{color:var(--gold);font-size:11px}
 #timer{margin-left:auto;opacity:.72;font-size:10px;padding-right:2px;overflow:hidden;text-overflow:ellipsis}
 #hudToggle{position:absolute;top:calc(4px + env(safe-area-inset-top));right:6px;width:44px;height:44px;z-index:7;display:flex;align-items:center;justify-content:center;padding:0;border-radius:12px;background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.2);color:var(--ink);font-size:14px;line-height:1;backdrop-filter:blur(4px)}
-body.hud-off #topbar,body.hud-off #minimap,body.hud-off #selcard,body.hud-off #tutbar,body.hud-off #tut-coach,body.hud-off #hint,body.hud-off #toasts{display:none!important}
+body.hud-off #topbar,body.hud-off #minimap,body.hud-off #selcard,body.hud-off #tutbar,body.hud-off #tut-coach,body.hud-off #hint,body.hud-off #toasts,body.hud-off #wrathMeter{display:none!important}
+#wrathMeter{position:absolute;top:calc(46px + env(safe-area-inset-top));left:8px;z-index:5;display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;background:rgba(0,0,0,.45);border:1px solid #ffffff26;font-size:10px;pointer-events:none}
+body.tut #wrathMeter{display:none}
+#wrathTrack{width:86px;height:6px;border-radius:3px;background:#0008;overflow:hidden}
+#wrathFill{display:block;height:100%;width:0%;border-radius:3px;background:linear-gradient(90deg,#7fd94a,#ffcf4b,#ff5e1f);transition:width .3s}
 #view{position:relative;flex:1;overflow:hidden;touch-action:none;background:#0e0a06}
 #gl{position:absolute;inset:0}
 #gl canvas{display:block}
@@ -74,10 +78,10 @@ kbd{background:#fff2;border-radius:4px;padding:0 5px}
       <span class="pill">🪵 <b id="r-wood">0</b></span>
       <span class="pill">🍏 <b id="r-food">0</b></span>
       <span class="pill">🏠 <b id="r-pop">0/0</b></span>
-      <span class="pill" id="bellPill">🔔 <b id="r-bell">3:00</b></span>
-      <span class="pill">⚔️ <b id="r-army">0</b></span>
+      <span class="pill" id="bellPill">🔔 <b id="r-bell">3:00</b> <b id="r-season">🍂</b></span>
       <span id="timer">00:00</span>
     </div>
+    <div id="wrathMeter"><span>🌿</span><div id="wrathTrack"><i id="wrathFill"></i></div></div>
     <button id="hudToggle" aria-label="Hide HUD" title="Hide HUD">▴</button>
     <canvas id="minimap" width="112" height="112"></canvas>
     <div id="selcard" style="display:none"></div>

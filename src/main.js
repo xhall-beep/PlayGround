@@ -143,6 +143,7 @@ function begin(isTutorial=false){
   if(!renderer){ renderer=new Renderer(gl); }
   if(!renderer._bound){ renderer._bound=true; bindInput(view,renderer,game); }
   renderer.buildStatic(map);
+  renderer.setSeason(st.season||'autumn');
   if(isTutorial){
     // Fixed framing sized to the device: portrait phones pull in and centre the
     // hall; landscape keeps more of the clearing visible. The camera never moves.
@@ -213,7 +214,8 @@ function renderSel(forceBuild=false){
   let html='';
   if(e.cat==='unit'){
     const U=UNITS[e.type];
-    html=`<h3>${U.icon} ${U.name} ${e.owner===1?'(enemy)':''}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0} · 🗡️ ${e.dmg} · ${e.order?('• '+e.order.kind):''}${e.carryAmt?` · carrying ${e.carryAmt} ${e.carry}`:''}</p>`;
+    const title=e.type==='hero'?`${U.icon} ${e.heroName||U.name} · Lv ${e.level||1}`:`${U.icon} ${U.name}`;
+    html=`<h3>${title} ${e.owner===1?'(enemy)':''}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0} · 🗡️ ${e.dmg}${e.type==='hero'?` · ⭐ ${e.xp||0} XP`:''} · ${e.order?('• '+e.order.kind):''}${e.carryAmt?` · carrying ${e.carryAmt} ${e.carry}`:''}</p>`;
     if(e.owner===0){
       html+=`<div class="btnrow">`;
       if(e.type==='peasant') html+=`<button data-a="build">🔨 Build</button><button data-a="wood">🪓 Wood</button><button data-a="gold">⛏️ Gold</button>`;
@@ -291,11 +293,11 @@ function hud(){
   const r=st.res[0];
   $('r-gold').textContent=`${r.gold|0}`; $('r-wood').textContent=`${r.wood|0}`; $('r-food').textContent=`${r.food|0}`;
   $('r-pop').textContent=`${ownerPop(st,0)}/${popCap(st,0)}`;
-  $('r-army').textContent=`${st.entities.filter(e=>e.owner===0&&e.cat==='unit'&&e.type!=='peasant'&&!e.dead).length}`;
+  $('wrathFill').style.width=`${Math.max(0,Math.min(100,st.wrath?.[0]||0))}%`;
   const m=(st.t/60)|0,s=(st.t%60)|0; $('timer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${st.tutorial?'':` · ${st.aiPersona}`}`;
   const bellNext=[180,360,540][st.bells||0];
   if(st.tutorial||bellNext===undefined){ $('bellPill').style.display='none'; }
-  else { $('bellPill').style.display=''; const left=Math.max(0,bellNext-st.t); $('r-bell').textContent=`${(left/60)|0}:${String(Math.ceil(left%60)).padStart(2,'0')}`; }
+  else { $('bellPill').style.display=''; const left=Math.max(0,bellNext-st.t); $('r-bell').textContent=`${(left/60)|0}:${String(Math.ceil(left%60)).padStart(2,'0')}`; $('r-season').textContent=st.season==='winter'?'❄️':'🍂'; }
   // minimap
   mm.fillStyle='#0c0a06'; mm.fillRect(0,0,MM,MM);
   const px=v=>((v+48)/96)*MM;
@@ -316,7 +318,7 @@ function loop(now){
   if(!paused&&!st.over){
     acc+=dt*st.speed;
     const STEP=0.1; let n=0;
-    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); if(ev.t==='bell')sfx.bell(); }); acc-=STEP; n++;
+    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); if(ev.t==='bell')sfx.bell(); if(ev.t==='season'){ renderer.setSeason(ev.season); toast('❄️ Winter falls — farms thin, the forest sleeps.',4200); } }); acc-=STEP; n++;
       aiAcc+=STEP; if(aiAcc>2){aiAcc=0; if(!st.tutorial){try{aiTick(st,map);}catch(err){console.warn(err);}} }
     }
     saveAcc+=dt; if(saveAcc>15){saveAcc=0; if(!st.tutorial)saveGame(st,map);}
@@ -355,7 +357,7 @@ function renderSelLive(){ // rebuild at ~1Hz only when something visible changed
   if($('selcard').style.display==='none'||!sel.size) return;
   const e=[...sel].map(id=>byId(st,id)).find(x=>x&&!x.dead);
   if(!e) return;
-  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),(e.abilityCd||0).toFixed(1),st.res[0].gold|0,st.res[0].wood|0,(st.entities.some(x=>x.owner===0&&x.cat==='bld'&&!x.dead&&x.hp<x.maxHp)?1:0),paused?'p':''].join('|');
+  const sig=[e.id,e.hp|0,(e.prog||0).toFixed(1),(e.queue||[]).length,(e.done?1:0),(e.abilityCd||0).toFixed(1),(e.level||0),(e.xp||0),st.res[0].gold|0,st.res[0].wood|0,(st.entities.some(x=>x.owner===0&&x.cat==='bld'&&!x.dead&&x.hp<x.maxHp)?1:0),paused?'p':''].join('|');
   if(sig===lastSig) return; lastSig=sig;
   const paneOpen=!!document.querySelector('#selcard [data-pane="build"]')&&document.querySelector('#selcard [data-pane="build"]').style.display!=='none';
   renderSel(paneOpen);
@@ -390,7 +392,7 @@ try{
   spawnBase(st,map,0,-30,-30,'human');
   spawnBase(st,map,1,30,30,'undead');
   updateFog(st,map);
-  renderer=new Renderer(gl); renderer.buildStatic(map);
+  renderer=new Renderer(gl); renderer.buildStatic(map); renderer.setSeason('autumn');
   renderer.target.set(0,0,0); renderer.dist=85;
   const demoT0=performance.now();
   (function paint(){ if(!running){ const t=(performance.now()-demoT0)/1000;

@@ -6,12 +6,14 @@ let UID = 1;
 export function reseedUID(st){ let m=0; for(const e of st.entities) if(typeof e.id==='number'&&e.id>m)m=e.id; UID=Math.max(UID,m+1); }
 export function makeState(opts){
   return {
-    t:0, tick:0, over:null, speed:Number(opts.speed||1), bells:0,
+    t:0, tick:0, over:null, speed:Number(opts.speed||1), bells:0, season:'autumn',
+    wrath:[0,0], wrathTier:[0,0], heroSpawned:false,
     fog: opts.fog!=='off',
     playerFaction: opts.faction||'human', aiFaction: opts.aiFaction||'undead',
     aiPersona: opts.ai||'expander',
     seed: (Math.random()*1e9)|0,
     entities:[], // {id,owner,kind,type,x,z,hp,maxHp,state,...}
+    events:[],
     res:[ {gold:220,wood:160,food:2,popCap:5},{gold:220,wood:160,food:2,popCap:5} ],
     stats:{ kills:[0,0], razes:[0,0] },
     firstBlood:false,
@@ -57,14 +59,32 @@ export function dealDamage(st,src,tgt,baseDmg){
   let d = Math.max(1, baseDmg - armor*(1-pierce));
   if(src?.buff?.rally>0) d *= 1.4;
   if(tgt.buff?.rally>0) d = Math.max(1, d-2);
+  if(src?.type==='treant'&&tgt.cat==='bld') d*=0.6;
+  // Hero aura: a living champion nearby steels the line (+10% damage).
+  if(src&&src.type!=='hero'&&(src.owner===0||src.owner===1)){
+    for(const a of st.entities){
+      if(a.type==='hero'&&!a.dead&&a.owner===src.owner&&Math.hypot(a.x-src.x,a.z-src.z)<8){ d*=1.1; break; }
+    }
+  }
   tgt.hp -= d; tgt.flash=0.25;
   if(tgt.hp<=0){ tgt.hp=0; tgt.dead=true; tgt.deathT=0.6;
-    if(tgt.cat==='unit') st.stats.kills[src.owner===0?0:1]+=0; // kills counted by killer below
-    if(src&&src.owner!==undefined&&tgt.cat==='unit'){ st.stats.kills[src.owner]+=1; if(!st.firstBlood){st.firstBlood=true; st.events.push({t:'toast',msg:`🩸 First blood — ${src.owner===0?'you strike!':'enemy strikes!'}`});} }
+    if(src&&(src.owner===0||src.owner===1)&&tgt.cat==='unit'){ st.stats.kills[src.owner]+=1; if(!st.firstBlood){st.firstBlood=true; st.events.push({t:'toast',msg:`🩸 First blood — ${src.owner===0?'you strike!':'enemy strikes!'}`});}
+      // Heroes learn from every kill.
+      if(src.type==='hero'){
+        src.xp=(src.xp||0)+1;
+        const lv=1+Math.floor(src.xp/3);
+        if(lv>(src.level||1)){
+          const steps=lv-(src.level||1);
+          src.level=lv;
+          for(let i=0;i<steps;i++){ src.maxHp*=1.12; src.hp*=1.12; src.dmg*=1.1; }
+          st.events.push({t:'toast',msg:`👑 ${src.heroName||'Hero'} reached level ${lv}!`});
+        }
+      }
+    }
     if(tgt.cat==='bld'&&tgt.done){ st.events.push({t:'toast',msg:`${tgt.owner===0?'😱 Your':'🔥 Enemy'} ${BUILDINGS[tgt.type]?.name||tgt.type} destroyed!`}); }
     if(tgt.type==='townhall'){ checkGameOver(st); }
     // Faction signatures: Undead raise the slain, Demon strikes leave a burn.
-    if(src&&src.owner!==undefined&&tgt.cat==='unit'){
+    if(src&&(src.owner===0||src.owner===1)&&tgt.cat==='unit'){
       const kf=factionMult(src.owner===0?st.playerFaction:st.aiFaction);
       if(kf.burn) tgt.burn={t:3,dps:2,owner:src.owner};
       if(kf.raise&&Math.random()<kf.raise){

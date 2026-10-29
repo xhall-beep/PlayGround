@@ -4,6 +4,7 @@ import { BUILDINGS, UNITS, trainableAt } from '../buildings/data.js';
 import { factionMult } from '../factions/factions.js';
 import { findPath, buildBlocked, updateFog } from '../world/world.js';
 import { useAbility } from './abilities.js';
+import { heroFor } from '../factions/heroes.js';
 
 export function spawnBase(st,map,owner,fx,fz,faction){
   const fm=factionMult(faction);
@@ -21,10 +22,10 @@ export function tick(st,map,dt){
   if(st.tick%20===0) updateFog(st,map);
   if(blockedTick!==st.tick){ blockedCache=buildBlocked(st,map); blockedTick=st.tick; }
 
-  // economy trickle: farms give food
-  if(st.tick%50===0){ for(let o=0;o<2;o++){ const farms=st.entities.filter(e=>e.owner===o&&e.type==='farm'&&e.done&&alive(e)).length; st.res[o].food+=farms*1; }
-    // Wilde signature: the forest regrows under their care.
-    if(fm[0].regrow||fm[1].regrow){ for(const tr of map.trees){ if(tr.amount>0&&tr.amount<180) tr.amount=Math.min(180,tr.amount+2); } }
+  // economy trickle: farms give food (halved in winter)
+  if(st.tick%50===0){ for(let o=0;o<2;o++){ const farms=st.entities.filter(e=>e.owner===o&&e.type==='farm'&&e.done&&alive(e)).length; st.res[o].food+=farms*(st.season==='winter'?0.5:1); }
+    // Wilde signature: the forest regrows under their care — except in winter.
+    if(st.season!=='winter'&&(fm[0].regrow||fm[1].regrow)){ for(const tr of map.trees){ if(tr.amount>0&&tr.amount<180) tr.amount=Math.min(180,tr.amount+2); } }
   }
   // Three Bells pacing: 3:00 raid, 6:00 turn, 9:00 war. Tutorial has no clock.
   const bellAt=st.tutorial?undefined:[180,360,540][st.bells||0];
@@ -33,7 +34,14 @@ export function tick(st,map,dt){
     const msg=st.bells===1?'🔔 First Bell — the raid begins!':st.bells===2?'🔔 Second Bell — the map turns.':'🔔 Third Bell — war without end!';
     st.events.push({t:'toast',msg});
     st.events.push({t:'bell',n:st.bells});
+    if(st.bells===2){
+      st.season='winter';
+      st.events.push({t:'season',season:'winter'});
+      if(!st.heroSpawned){ st.heroSpawned=true; spawnHero(st,0); spawnHero(st,1); }
+    }
   }
+  // Wild-wrath decays when the axes rest.
+  if(!st.tutorial){ for(let o=0;o<2;o++) st.wrath[o]=Math.max(0,(st.wrath[o]||0)-0.15*dt); }
 
   for(const e of st.entities){
     if(e.dead) continue;
@@ -62,7 +70,7 @@ export function tick(st,map,dt){
         e.burn.t-=dt; e.hp-=e.burn.dps*dt;
         if(e.hp<=0){ e.hp=0; e.dead=true; e.deathT=0.6; continue; }
       }
-      const efm=fm[e.owner];
+      const efm=fm[e.owner]||{};
       if(efm.regen&&e.hp<e.maxHp){
         let threat=false;
         for(const o of st.entities){
@@ -71,7 +79,24 @@ export function tick(st,map,dt){
         }
         if(!threat) e.hp=Math.min(e.maxHp,e.hp+efm.regen*dt);
       }
-      if(e.owner===1&&(e.abilityCd||0)<=0&&(e.type==='warrior'||e.type==='archer'||e.type==='knight')){
+      if(e.root>0) e.root-=dt;
+      if(e.owner===2){
+        // Neutral treants punish the kingdom that chopped too much; units first.
+        e.retarget=(e.retarget??0)-dt;
+        if(e.retarget<=0){
+          e.retarget=1.5; let unit=null,ud=20,bld=null,bd=14;
+          for(const o of st.entities){
+            if(o.dead||(o.owner!==0&&o.owner!==1))continue;
+            if(e.wildOwner!==undefined&&o.owner!==e.wildOwner)continue;
+            const d=Math.hypot(o.x-e.x,o.z-e.z);
+            if(o.cat==='unit'&&d<ud){ud=d;unit=o;}
+            else if(o.cat==='bld'&&d<bd){bd=d;bld=o;}
+          }
+          const best=unit||bld;
+          if(best) e.order={kind:'attack',id:best.id};
+        }
+      }
+      if(e.owner===1&&(e.abilityCd||0)<=0&&(e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='hero')){
         if(nearestEnemy(st,e,10,e.owner)) useAbility(st,e);
       }
       e.cool-=dt;
@@ -106,7 +131,7 @@ export function tick(st,map,dt){
 function spawnHit(st,x,z){ st.events.push({t:'hit',x,z}); }
 function nearestEnemy(st,e,range,owner){
   let best=null,bd=range;
-  for(const o of st.entities){ if(o.dead||o.owner===owner||o.owner===2)continue; if(o.cat==='proj')continue; if(o.cat==='res')continue;
+  for(const o of st.entities){ if(o.dead||o.owner===owner||o.cat==='proj'||o.cat==='res')continue;
     const d=Math.hypot(o.x-e.x,o.z-e.z); if(d<bd){bd=d;best=o;} }
   return best;
 }
@@ -114,7 +139,7 @@ function nearestEnemy(st,e,range,owner){
 function updateUnit(st,map,e,dt,fm,blocked){
   const o=e.order;
   // auto-acquire for military
-  if((e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton')&&(!o||o.kind==='move'||o.kind==='idle')){
+  if((e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton'||e.type==='hero')&&(!o||o.kind==='move'||o.kind==='idle')){
     if(e.cool<=0){ const tgt=nearestEnemy(st,e,(e.type==='archer'?9:4)*(e.type==='archer'?(fm.range??1):1),e.owner); if(tgt){ e.order={kind:'attack',id:tgt.id}; } }
   }
   if(!o){ e.order={kind:'idle'}; return; }
@@ -175,7 +200,8 @@ function updateUnit(st,map,e,dt,fm,blocked){
       } else moveToward(e,hall,dt);
       return;
     }
-    if(d<2.2){ e.gatherT=(e.gatherT||0)+dt; if(e.gatherT>1.2){e.gatherT=0; const take=Math.min(UNITS.peasant.gather,n.amount); n.amount-=take; e.carryAmt=take; e.carry=o.kind2;} }
+    if(d<2.2){ e.gatherT=(e.gatherT||0)+dt; if(e.gatherT>1.2){e.gatherT=0; const take=Math.min(UNITS.peasant.gather,n.amount); n.amount-=take; e.carryAmt=take; e.carry=o.kind2;
+      if(o.kind2==='tree'&&!st.tutorial) addWrath(st,e,take); } }
     else moveToward(e,n,dt);
     return;
   }
@@ -189,6 +215,7 @@ function updateUnit(st,map,e,dt,fm,blocked){
 }
 
 function moveToward(e,wp,dt){
+  if(e.root>0) return false;
   const dx=wp.x-e.x,dz=wp.z-e.z,d=Math.hypot(dx,dz);
   if(d<0.4) return true;
   const sp=(e.speed||5)*(e.buff?.charge>0?2.2:1)*dt;
@@ -213,6 +240,30 @@ export function nearestHall(st,owner,x,z){
   let best=null,bd=1e9;
   for(const e of st.entities){ if(e.dead||e.owner!==owner||e.cat!=='bld')continue; if(e.type!=='townhall'&&e.type!=='farm')continue; if(!e.done)continue; const d=(e.x-x)**2+(e.z-z)**2; if(d<bd){bd=d;best=e;} }
   return best;
+}
+export function spawnHero(st,owner){
+  const th=st.entities.find(e=>!e.dead&&e.owner===owner&&e.type==='townhall');
+  if(!th) return null;
+  const fac=owner===0?st.playerFaction:st.aiFaction, fm=factionMult(fac), u=UNITS.hero, H=heroFor(fac);
+  const hp=u.hp*fm.hp, dmg=u.dmg*fm.dmg;
+  const hero=addEntity(st,{cat:'unit',type:'hero',owner,faction:fac,heroName:H.name,x:th.x+4,z:th.z-4,hp,maxHp:hp,dmg,armor:u.armor,range:u.range,speed:u.speed*(fm.speed??1),sight:u.sight,armorPierce:u.armorPierce||0,level:1,xp:0,order:null,carry:null,carryAmt:0,cool:0});
+  st.events.push({t:'toast',msg:owner===0?`👑 ${H.name} answers your call!`:`👑 Enemy ${H.name} takes the field!`});
+  return hero;
+}
+export function addWrath(st,e,take){
+  const fk=e.owner===0?st.playerFaction:st.aiFaction;
+  st.wrath[e.owner]=Math.min(100,(st.wrath[e.owner]||0)+take*(fk==='elf'?0.05:0.1));
+  const old=st.wrathTier[e.owner]||0, tier=Math.floor(st.wrath[e.owner]/25);
+  if(tier>old){ st.wrathTier[e.owner]=tier; spawnTreants(st,e,tier-old); }
+}
+export function spawnTreants(st,src,n){
+  const live=st.entities.filter(e=>e.owner===2&&e.type==='treant'&&!e.dead).length;
+  const u=UNITS.treant;
+  for(let i=0;i<n&&live+i<8;i++){
+    const a=Math.random()*Math.PI*2, r=3+Math.random()*3;
+    addEntity(st,{cat:'unit',type:'treant',owner:2,wildOwner:src.owner,x:src.x+Math.cos(a)*r,z:src.z+Math.sin(a)*r,hp:u.hp,maxHp:u.hp,dmg:u.dmg,armor:u.armor,range:u.range,speed:u.speed,sight:u.sight,armorPierce:0,order:{kind:'attack',id:src.id},carry:null,carryAmt:0,cool:0});
+  }
+  st.events.push({t:'toast',msg:'🌲 The wild sends treants!'});
 }
 export function fireProjectile(st,src,tgt,dmg){
   st.entities.push({id:(Math.random()*1e9)|0,cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2,armorPierce:src.armorPierce||0});

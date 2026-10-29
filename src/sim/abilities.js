@@ -1,6 +1,7 @@
 // Military: data-driven active abilities with cooldowns.
 // Pure sim helpers — they mutate entity state through the engine's damage helper.
 import { alive, dealDamage } from '../core/engine.js';
+import { heroAbility } from '../factions/heroes.js';
 
 export const ABILITIES = {
   warrior: { id:'rally',  name:'Rally',  icon:'⚡', cd:22, desc:'+40% damage and +2 armor to nearby allies for 6s.' },
@@ -9,7 +10,7 @@ export const ABILITIES = {
   peasant: { id:'repair', name:'Repair', icon:'🔧', cd:15, desc:'Restore 15% HP to the nearest damaged building.' },
 };
 
-export function abilityFor(e){ return ABILITIES[e.type] || null; }
+export function abilityFor(e){ return e.type==='hero' ? heroAbility(e.faction || 'human') : (ABILITIES[e.type] || null); }
 export function abilityReady(e){ return !!abilityFor(e) && (e.abilityCd || 0) <= 0; }
 
 export function useAbility(st, e){
@@ -44,6 +45,32 @@ export function useAbility(st, e){
     if(!b) return false;
     b.repair = 4; b.repairRate = b.maxHp * 0.15 / 4;
     st.events.push({ t:'hit', x:b.x, z:b.z });
+  } else if(a.id === 'aegis'){
+    let any = false;
+    for(const o of st.entities){
+      if(o.dead || o.owner !== e.owner || o.cat !== 'unit') continue;
+      if(Math.hypot(o.x - e.x, o.z - e.z) > 8) continue;
+      o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.35); any = true;
+    }
+    if(!any) return false;
+    st.events.push({ t:'hit', x:e.x, z:e.z });
+  } else if(a.id === 'bladestorm'){
+    const hit = foes.filter(o => Math.hypot(o.x - e.x, o.z - e.z) <= 5);
+    if(!hit.length) return false;
+    for(const o of hit) dealDamage(st, e, o, 24);
+    st.events.push({ t:'hit', x:e.x, z:e.z });
+  } else if(a.id === 'briar'){
+    const hit = foes.filter(o => Math.hypot(o.x - e.x, o.z - e.z) <= 8);
+    if(!hit.length) return false;
+    for(const o of hit){ o.root = 2.5; dealDamage(st, e, o, 8); }
+    st.events.push({ t:'hit', x:e.x, z:e.z });
+  } else if(a.id === 'deathnova'){
+    const hit = foes.filter(o => Math.hypot(o.x - e.x, o.z - e.z) <= 6);
+    if(!hit.length) return false;
+    let healed = 0;
+    for(const o of hit){ const before = o.hp; dealDamage(st, e, o, 18); healed += Math.max(0, before - o.hp); }
+    e.hp = Math.min(e.maxHp, e.hp + healed * 0.5);
+    st.events.push({ t:'hit', x:e.x, z:e.z });
   }
   e.abilityCd = a.cd;
   return true;

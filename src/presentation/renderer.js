@@ -27,11 +27,12 @@ export class Renderer{
   }
   lights(){
     // High-saturation chibi key: warm sun, cool sky bounce, punchy fill.
-    this.scene.add(new THREE.HemisphereLight(0xfff0d2,0x4a7a2a,1.15));
+    this.hemi=new THREE.HemisphereLight(0xfff0d2,0x4a7a2a,1.15);
+    this.scene.add(this.hemi);
     const sun=new THREE.DirectionalLight(0xfff2c4,2.15);
     sun.position.set(30,48,18); sun.castShadow=true;
     sun.shadow.mapSize.set(1024,1024); sun.shadow.camera.left=-60;sun.shadow.camera.right=60;sun.shadow.camera.top=60;sun.shadow.camera.bottom=-60;
-    this.scene.add(sun);
+    this.scene.add(sun); this.sun=sun;
     // Saturation-preserving tone curve: crushes nothing, lifts mid-tones into candy.
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure=1.18;
@@ -52,11 +53,22 @@ export class Renderer{
     }
     geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
     const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
-    const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; this.scene.add(m);
+    const m=new THREE.Mesh(geo,mat); m.receiveShadow=true; this.scene.add(m); this.groundMat=mat;
     // fog shroud plane
     const fg=new THREE.PlaneGeometry(WORLD,WORLD); fg.rotateX(-Math.PI/2);
     this.fogMat=new THREE.MeshBasicMaterial({map:this.fogTex,transparent:true,opacity:0.92,depthWrite:false});
     this.fogMesh=new THREE.Mesh(fg,this.fogMat); this.fogMesh.position.y=0.6; this.scene.add(this.fogMesh);
+  }
+  // Season Wheel: the Second Bell turns autumn to winter (palette only; sim owns effects).
+  setSeason(season){
+    this.season=season;
+    const w=season==='winter';
+    this.scene.background.set(w?0x141c26:0x1c130c);
+    this.scene.fog.color.set(w?0x141c26:0x1c130c);
+    if(this.hemi){ this.hemi.color.set(w?0xcfe4ff:0xfff0d2); this.hemi.groundColor.set(w?0x2a3a4a:0x4a7a2a); this.hemi.intensity=w?0.95:1.15; }
+    if(this.sun){ this.sun.color.set(w?0xdfeaff:0xfff2c4); this.sun.intensity=w?1.7:2.15; }
+    if(this.groundMat) this.groundMat.color.set(w?0xbfd0dd:0xffffff);
+    if(this.leafMats) for(const m of this.leafMats) m.color.set(w?0x3f5a4a:m.userData.base);
   }
   // Fixed-camera distance + FOV by aspect. Vertical FOV widens on tall phones so
   // the whole clearing stays reachable by thumb without moving the camera.
@@ -82,6 +94,7 @@ export class Renderer{
     const treeTop=new THREE.ConeGeometry(1.4,2.6,7);
     const trunkMat=new THREE.MeshStandardMaterial({color:0x8a5a2b,roughness:1});
     const leafMats=[0xff7a1a,0xffb02e,0xff5e1f,0x7fd94a].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:0.85,flatShading:true}));
+    leafMats.forEach(m=>m.userData.base=m.color.getHex()); this.leafMats=leafMats;
     map.trees.forEach((t,i)=>{
       const g=new THREE.Group();
       const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=0.8; trunk.castShadow=true; g.add(trunk);
@@ -106,6 +119,15 @@ export class Renderer{
     const head=new THREE.Mesh(new THREE.SphereGeometry(0.62,14,12),skin); head.position.y=2.0; head.scale.set(1.15,1,1.15); head.castShadow=true; g.add(head);
     const eyeM=new THREE.MeshBasicMaterial({color:0x222222});
     for(const s of [-1,1]){ const e=new THREE.Mesh(new THREE.SphereGeometry(0.09,6,6),eyeM); e.position.set(s*0.25,2.05,0.52); g.add(e); }
+    return g;
+  }
+  treantMesh(){
+    const g=new THREE.Group();
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.75,2.2,6),new THREE.MeshStandardMaterial({color:0x5a3d1e,roughness:1}));
+    trunk.position.y=1.1; trunk.castShadow=true; g.add(trunk);
+    const canopy=new THREE.Mesh(new THREE.ConeGeometry(1.5,2.2,7),new THREE.MeshStandardMaterial({color:0x2f6b2f,roughness:0.9,flatShading:true}));
+    canopy.position.y=2.8; canopy.castShadow=true; g.add(canopy);
+    for(const s of [-1,1]){ const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.18,1.3,5),new THREE.MeshStandardMaterial({color:0x5a3d1e,roughness:1})); arm.position.set(s*0.85,1.7,0); arm.rotation.z=s*0.9; g.add(arm); }
     return g;
   }
   bldMesh(type,owner){
@@ -136,16 +158,25 @@ export class Renderer{
       seen.add(e.id);
       let rec=this.meshes.get(e.id);
       if(!rec){
-        const g=e.cat==='unit'?this.chibi(e.owner===0?0x3b6fe0:0xe03b3b):this.bldMesh(e.type,e.owner);
+        let g;
+        if(e.cat==='unit'){
+          if(e.type==='treant') g=this.treantMesh();
+          else if(e.type==='hero'){
+            g=new THREE.Group();
+            const inner=this.chibi(e.owner===0?0x3b6fe0:0xe03b3b); inner.scale.setScalar(1.3); g.add(inner);
+            const crown=new THREE.Mesh(new THREE.ConeGeometry(0.32,0.5,6),new THREE.MeshStandardMaterial({color:0xffd54a,metalness:0.6,roughness:0.3,emissive:0x553300})); crown.position.y=2.7; g.add(crown);
+            const cape=new THREE.Mesh(new THREE.PlaneGeometry(0.9,1.4),new THREE.MeshStandardMaterial({color:e.owner===0?0x1e3a8a:0x7a1f1f,side:THREE.DoubleSide})); cape.position.set(0,1.5,-0.45); g.add(cape);
+          } else g=this.chibi(e.owner===0?0x3b6fe0:e.owner===2?0x6b4f2a:0xe03b3b);
+        } else g=this.bldMesh(e.type,e.owner);
         // weapon props
-        if(e.cat==='unit'&&e.type!=='peasant'){ const w=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.1,0.12),new THREE.MeshStandardMaterial({color:0x888888})); w.position.set(0.7,1.2,0.2); w.rotation.z=0.4; g.add(w); }
+        if(e.cat==='unit'&&e.type!=='peasant'&&e.type!=='treant'){ const hero=e.type==='hero'; const w=new THREE.Mesh(new THREE.BoxGeometry(hero?0.16:0.12,hero?1.5:1.1,hero?0.16:0.12),new THREE.MeshStandardMaterial({color:0x888888})); w.position.set(hero?0.9:0.7,hero?1.6:1.2,0.2); w.rotation.z=0.4; g.add(w); }
         if(e.cat==='unit'&&e.type==='peasant'){ const ax=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.9,0.1),new THREE.MeshStandardMaterial({color:0x6b4423})); ax.position.set(0.7,1.1,0); g.add(ax); }
         // hp bar
         const hb=document.createElement('canvas'); hb.width=32; hb.height=4;
         const tex=new THREE.CanvasTexture(hb);
-        const bar=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false})); bar.scale.set(1.8,0.25,1); bar.position.y=e.cat==='unit'?2.9:5.2; g.add(bar);
+        const bar=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false})); bar.scale.set(1.8,0.25,1); bar.position.y=e.cat==='unit'?(e.type==='treant'?4.4:e.type==='hero'?3.7:2.9):5.2; g.add(bar);
         // selection ring
-        const ring=new THREE.Mesh(new THREE.RingGeometry(0.9,1.1,24),new THREE.MeshBasicMaterial({color:e.owner===0?0x4dff7a:0xff4d4d,transparent:true,opacity:0.9,side:THREE.DoubleSide}));
+        const ring=new THREE.Mesh(new THREE.RingGeometry(0.9,1.1,24),new THREE.MeshBasicMaterial({color:e.owner===0?0x4dff7a:e.owner===2?0xffa53b:0xff4d4d,transparent:true,opacity:0.9,side:THREE.DoubleSide}));
         ring.rotation.x=-Math.PI/2; ring.position.y=0.1; ring.visible=false; g.add(ring);
         this.scene.add(g); rec={g,bar,hb,tex,ring}; this.meshes.set(e.id,rec);
       }

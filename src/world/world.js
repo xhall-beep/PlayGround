@@ -75,7 +75,7 @@ export function findPath(sx,sz,tx,tz,blocked){
 export function updateFog(st,map){
   map.visible[0].fill(0); map.visible[1].fill(0);
   for(const e of st.entities){
-    if(e.dead) continue;
+    if(e.dead||(e.owner!==0&&e.owner!==1)) continue;
     const sight=e.sight||8, gx0=Math.max(0,((e.x-sight)/CELL+GRID/2)|0), gx1=Math.min(GRID-1,((e.x+sight)/CELL+GRID/2)|0);
     const gz0=Math.max(0,((e.z-sight)/CELL+GRID/2)|0), gz1=Math.min(GRID-1,((e.z+sight)/CELL+GRID/2)|0);
     for(let gz=gz0;gz<=gz1;gz++)for(let gx=gx0;gx<=gx1;gx++){

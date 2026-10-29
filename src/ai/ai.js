@@ -15,7 +15,7 @@ export function aiTick(st,map){
   const O=1; if(st.over) return;
   const fm=factionMult(st.aiFaction);
   const peasants=st.entities.filter(e=>e.owner===O&&e.type==='peasant'&&alive(e));
-  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton')&&alive(e));
+  const army=st.entities.filter(e=>e.owner===O&&(e.type==='warrior'||e.type==='archer'||e.type==='knight'||e.type==='skeleton'||e.type==='hero')&&alive(e));
   const halls=st.entities.filter(e=>e.owner===O&&e.type==='townhall'&&alive(e));
   if(!halls.length) return;
   const hall=halls[0];
@@ -74,7 +74,7 @@ export function aiTick(st,map){
     if(foe) army.forEach((u,i)=>{ u.order={kind:'attackmove',x:foe.x+(i%4)*2,z:foe.z+Math.floor(i/4)*2,path:null,pi:0}; });
   }
   // 6) defense: if enemy near base, pull half army back
-  const invader=st.entities.find(e=>e.owner===0&&e.cat==='unit'&&alive(e)&&Math.hypot(e.x-hall.x,e.z-hall.z)<18);
+  const invader=st.entities.find(e=>(e.owner===0||e.owner===2)&&e.cat==='unit'&&alive(e)&&Math.hypot(e.x-hall.x,e.z-hall.z)<18);
   if(invader){ army.slice(0,Math.ceil(army.length/2)).forEach(u=>{u.order={kind:'attack',id:invader.id};}); }
 
   // 7) scouting: a spare body walks into the fog every ~45s

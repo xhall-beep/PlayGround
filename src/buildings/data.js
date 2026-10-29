@@ -13,5 +13,7 @@ export const UNITS = {
   archer: { name:'Archer',  icon:'🏹', hp:90,  dmg:10, armor:0, range:9,   speed:5.8, sight:12, cost:{gold:70,wood:40}, time:18, pop:1, weapon:'bow', armorPierce:0.6, desc:'Ranged. Fragile.' },
   knight: { name:'Knight',  icon:'🐎', hp:260, dmg:18, armor:2, range:1.7, speed:7.2, sight:11, cost:{gold:140,wood:40},time:26, pop:2, needs:'blacksmith', weapon:'lance', armorPierce:0.25, desc:'Fast cavalry. Needs Blacksmith.' },
   skeleton:{ name:'Skeleton',icon:'💀', hp:60,  dmg:8,  armor:0, range:1.5, speed:5.0, sight:9,  cost:{gold:0,wood:0},  time:8,  pop:1, weapon:'claw', armorPierce:0.1, desc:'Raised from the slain by the Undead.' },
+  hero:   { name:'Hero',    icon:'👑', hp:520, dmg:26, armor:2, range:1.8, speed:6.2, sight:12, cost:{gold:0,wood:0},  time:30, pop:2, weapon:'sword', armorPierce:0.2, desc:'Your champion. Levels in battle.' },
+  treant: { name:'Treant',  icon:'🌳', hp:320, dmg:22, armor:1, range:1.8, speed:3.8, sight:10, cost:{gold:0,wood:0},  time:0,  pop:0, weapon:'claw', armorPierce:0, desc:'The wild answers greed.' },
 };
 export function trainableAt(building){ return { townhall:['peasant'], barracks:['warrior','archer'], archery:['archer','knight'] }[building]||[]; }
