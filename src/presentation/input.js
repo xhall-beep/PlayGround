@@ -8,9 +8,13 @@ export function bindInput(view, renderer, game){
   el.style.touchAction='none';
   const isLocked=()=>game.isCameraLocked&&game.isCameraLocked();
   el.addEventListener('pointerdown',e=>{ try{el.setPointerCapture(e.pointerId);}catch{} touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(touches.size===2){ const p=[...touches.values()]; pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); }
-    down={x:e.clientX,y:e.clientY,t:performance.now()}; moved=0; longFired=false;
-    longT=setTimeout(()=>{ longFired=true; game.onLongPress(); },550);
+    if(touches.size===1){
+      down={x:e.clientX,y:e.clientY,t:performance.now()}; moved=0; longFired=false;
+      longT=setTimeout(()=>{ longFired=true; game.onLongPress(); },550);
+    } else {
+      clearTimeout(longT); longT=null; down=null; moved=99; longFired=false;
+      if(touches.size===2){ const p=[...touches.values()]; pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); }
+    }
   });
   el.addEventListener('pointermove',e=>{
     if(!touches.has(e.pointerId))return;
@@ -31,13 +35,17 @@ export function bindInput(view, renderer, game){
     }
   });
   const up=e=>{
-    touches.delete(e.pointerId); clearTimeout(longT);
-    if(longFired) return;
+    const cancelled=e.type==='pointercancel';
+    touches.delete(e.pointerId); clearTimeout(longT); longT=null;
+    if(cancelled){ touches.clear(); down=null; moved=99; longFired=false; pinch=0; return; }
+    // A multi-touch gesture must never turn into a tap when one finger lifts.
+    if(touches.size){ down=null; moved=99; longFired=false; return; }
+    if(longFired){ down=null; return; }
     if(!down)return;
     const dt=performance.now()-down.t;
     // Generous tap window: any touch under 22px of travel counts, 600ms max.
     if(moved<22&&dt<600){ game.onTap(e); }
-    down=null;
+    down=null; pinch=0;
   };
   el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
   // wheel zoom (desktop only; ignored while the camera is locked)

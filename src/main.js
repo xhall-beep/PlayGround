@@ -47,6 +47,10 @@ function toast(msg,ms=2600){
   while(box.children.length>3) box.firstChild.remove();
   d._h=setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>d.remove(),350); },ms);
 }
+function saveCurrentGame(){ return !!(st&&map&&saveGame(st,map)); }
+function saveOnLeave(){ if(running&&st&&!st.tutorial&&!st.over) saveCurrentGame(); }
+window.addEventListener('pagehide',saveOnLeave);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveOnLeave(); });
 
 // ---- Mission 1: tutorial mode (no enemies, no fail state) ----
 function startMission1(){
@@ -253,7 +257,7 @@ function onCardBtn(b,e,forceBuild){
   if(a==='build'){ const p=cardPane(); if(p)p.style.display=p.style.display==='none'?'flex':'none'; }
   if(a==='wood'||a==='gold'){ const kind2=a==='gold'?'gold':'tree'; [...sel].forEach(id=>{const x=byId(st,id); if(x&&x.type==='peasant'){const i=findResource(map,x.x,x.z,kind2,st); if(i>=0)orderGather(st,map,x,kind2,i);}}); sfx.move(); }
   if(a==='pause'){ paused=!paused; toast(paused?'⏸ Paused — SP safe. Tap Resume to continue.':'▶ Resumed'); renderSel(); }
-  if(a==='save'){ saveGame(st,map); toast('💾 Saved to device'); }
+  if(a==='save'){ toast(saveCurrentGame()?'💾 Saved to device':'⚠️ Save failed — device storage is unavailable'); }
   if(a==='menu'){ running=false; $('menu').style.display='flex'; renderFactions(); }
   if(u){ const RA=trainableAt(e.type).includes(u); if(!RA)return;
     if(ownerPop(st,0)+UNITS[u].pop>popCap(st,0)){toast('🏠 Build Farms for +pop!');return;}
