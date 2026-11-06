@@ -28,7 +28,7 @@ export function tick(st,map,dt){
     if(st.season!=='winter'&&(fm[0].regrow||fm[1].regrow)){ for(const tr of map.trees){ if(tr.amount>0&&tr.amount<180) tr.amount=Math.min(180,tr.amount+2); } }
   }
   // Three Bells pacing: 3:00 raid, 6:00 turn, 9:00 war. Tutorial has no clock.
-  const bellAt=st.tutorial?undefined:[180,360,540][st.bells||0];
+  const bellAt=(st.tutorial||st.gameMode==='defense')?undefined:[180,360,540][st.bells||0];
   if(bellAt!==undefined&&st.t>=bellAt){
     st.bells=(st.bells||0)+1;
     const msg=st.bells===1?'🔔 First Bell — the raid begins!':st.bells===2?'🔔 Second Bell — the map turns.':'🔔 Third Bell — war without end!';
@@ -174,8 +174,14 @@ function updateUnit(st,map,e,dt,fm,blocked){
       }
       o.chaseT-=dt;
       const wp=o.path[o.pi];
-      if(wp&&moveToward(e,wp,dt)){ o.pi++; if(o.pi>=o.path.length){o.path=null;o.chaseT=0;} }
-      if(Math.hypot(tgt.x-e.x,tgt.z-e.z)>reach+14) e.order={kind:'idle'};
+      if(wp&&moveToward(e,wp,dt)){
+        o.pi++;
+        if(o.pi>=o.path.length){
+          o.path=null; o.chaseT=0;
+          closeOnTarget(e,tgt,reach,dt);
+        }
+      }
+      if(!e.defenseAttacker&&Math.hypot(tgt.x-e.x,tgt.z-e.z)>reach+14) e.order={kind:'idle'};
     }
     return;
   }
@@ -222,6 +228,14 @@ function moveToward(e,wp,dt){
   e.x+=dx/d*Math.min(sp,d); e.z+=dz/d*Math.min(sp,d);
   e.face={x:wp.x,z:wp.z};
   return d<0.6;
+}
+function closeOnTarget(e,tgt,reach,dt){
+  if(e.root>0) return;
+  const dx=tgt.x-e.x,dz=tgt.z-e.z,d=Math.hypot(dx,dz);
+  if(d<=reach||d===0) return;
+  const step=Math.min((e.speed||5)*(e.buff?.charge>0?2.2:1)*dt,d-reach);
+  e.x+=dx/d*step; e.z+=dz/d*step;
+  e.face={x:tgt.x,z:tgt.z};
 }
 export function orderMove(st,e,x,z,attack){
   // formation offsets applied by caller

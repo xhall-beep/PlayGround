@@ -103,12 +103,15 @@ kbd{background:#fff2;border-radius:4px;padding:0 5px}
     </div></div>
     <div id="menu"><div class="card">
       <h1>KINGDOMS <span>en Guerre</span></h1>
-      <div class="sub">🍂 Autumn-forest mobile RTS • Town Hall → Farms → Barracks → destroy the enemy Town Hall. Tap to select, tap ground to move, tap enemy to attack.</div>
+      <div class="sub">🍂 Autumn-forest mobile RTS • Build your kingdom, raise an army, and choose a classic battle or defend against escalating waves. Tap to select, tap ground to move, tap enemy to attack.</div>
       <div class="sub"><b>Mission 1 — First Harvest:</b> a guided tutorial with no enemies and no fail state. Learn to gather, build, and train.</div>
       <div class="btnrow"><button class="primary" id="mission1Btn" style="flex:1">▶ Mission 1 · Tutorial</button></div>
       <div class="sub" style="margin-top:6px">Or jump straight into a battle:</div>
       <b style="font-size:13px">Choose faction (Human fully playable; others remix stats)</b>
       <div class="grid2" id="factions"></div>
+      <label class="row">Game mode
+        <select id="mode"><option value="battle" selected>⚔️ Battle — destroy the enemy Town Hall</option><option value="defense">🛡️ Tower Defense — survive 8 waves</option></select>
+      </label>
       <label class="row">AI personality
         <select id="ai"><option value="aggressor">🔥 Aggressor — early pressure</option><option value="turtle">🛡️ Defender — turtles</option><option value="expander" selected>🌲 Expander — booms</option></select>
       </label>

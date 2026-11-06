@@ -98,6 +98,7 @@ export function dealDamage(st,src,tgt,baseDmg){
 export function checkGameOver(st){
   const th0=st.entities.some(e=>e.owner===0&&e.type==='townhall'&&alive(e));
   const th1=st.entities.some(e=>e.owner===1&&e.type==='townhall'&&alive(e));
+  if(st.gameMode==='defense'){ if(!th0) st.over={win:false,defense:true}; return; }
   if(!th0&&!th1) st.over={win:false,draw:true};
   else if(!th1) st.over={win:true};
   else if(!th0) st.over={win:false};

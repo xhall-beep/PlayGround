@@ -12,6 +12,7 @@ import { bindInput } from './presentation/input.js';
 import { sfx, setSound } from './presentation/audio.js';
 import { MISSION1, MissionRunner, makeCtx, scenarioForMission1, markMissionComplete } from './missions/mission1.js';
 import { TutorialUI } from './missions/tutorial-ui.js';
+import { setupDefense, updateDefense } from './modes/defense.js';
 
 const $=id=>document.getElementById(id);
 const view=$('view'), gl=$('gl');
@@ -37,6 +38,7 @@ function renderFactions(){
   $('wipeBtn').onclick=()=>{ wipeSave(); $('continueBtn').disabled=true; toast('Save wiped'); };
   $('helpBtn').onclick=()=>toast('🧑‍🌾 Peasants gather + build. 🌾 Farm=+6 pop. ⚒️ Barracks=army. Tap enemy=attack. Destroy enemy 🏰!');
   $('startBtn').onclick=()=>startNew(box.dataset.sel||'human');
+  $('mode').onchange=()=>{ $('startBtn').textContent=$('mode').value==='defense'?'🛡️ Start defense':'▶ Start battle'; };
   $('mission1Btn').onclick=()=>startMission1();
 }
 function toast(msg,ms=2600){
@@ -125,11 +127,14 @@ function startNew(faction){
   setSound($('sound').value);
   map=genMap(st.seed);
   spawnBase(st,map,0,-30,-30,faction);
-  spawnBase(st,map,1,30,30,aiF);
+  const defense=$('mode').value==='defense';
+  if(defense) setupDefense(st,map,faction);
+  else spawnBase(st,map,1,30,30,aiF);
   // starting resources near bases already in map; give peasant orders
   updateFog(st,map);
   begin();
-  toast(`${FACTIONS[faction].icon} Your kingdom vs ${FACTIONS[aiF].icon} ${FACTIONS[aiF].name} (${st.aiPersona}) — raze their Town Hall!`,4200);
+  if(defense) toast(`🛡️ Tower Defense — prepare your kingdom, then survive ${st.defense.maxWaves} waves!`,4200);
+  else toast(`${FACTIONS[faction].icon} Your kingdom vs ${FACTIONS[aiF].icon} ${FACTIONS[aiF].name} (${st.aiPersona}) — raze their Town Hall!`,4200);
 }
 function startFromSave(s){
   setSound($('sound').value);
@@ -296,7 +301,11 @@ function hud(){
   $('wrathFill').style.width=`${Math.max(0,Math.min(100,st.wrath?.[0]||0))}%`;
   const m=(st.t/60)|0,s=(st.t%60)|0; $('timer').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${st.tutorial?'':` · ${st.aiPersona}`}`;
   const bellNext=[180,360,540][st.bells||0];
-  if(st.tutorial||bellNext===undefined){ $('bellPill').style.display='none'; }
+  if(st.gameMode==='defense'&&st.defense){
+    const d=st.defense; $('bellPill').style.display='';
+    $('r-bell').textContent=d.phase==='build'?`Wave ${d.wave+1}/${d.maxWaves} · Build ${Math.ceil(d.phaseLeft)}s`:`Wave ${d.wave}/${d.maxWaves} · ${d.enemiesRemaining} left`;
+    $('r-season').textContent='🛡️';
+  } else if(st.tutorial||bellNext===undefined){ $('bellPill').style.display='none'; }
   else { $('bellPill').style.display=''; const left=Math.max(0,bellNext-st.t); $('r-bell').textContent=`${(left/60)|0}:${String(Math.ceil(left%60)).padStart(2,'0')}`; $('r-season').textContent=st.season==='winter'?'❄️':'🍂'; }
   // minimap
   mm.fillStyle='#0c0a06'; mm.fillRect(0,0,MM,MM);
@@ -318,8 +327,8 @@ function loop(now){
   if(!paused&&!st.over){
     acc+=dt*st.speed;
     const STEP=0.1; let n=0;
-    while(acc>=STEP&&n<5){ tick(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); if(ev.t==='bell')sfx.bell(); if(ev.t==='season'){ renderer.setSeason(ev.season); toast('❄️ Winter falls — farms thin, the forest sleeps.',4200); } }); acc-=STEP; n++;
-      aiAcc+=STEP; if(aiAcc>2){aiAcc=0; if(!st.tutorial){try{aiTick(st,map);}catch(err){console.warn(err);}} }
+    while(acc>=STEP&&n<5){ tick(st,map,STEP); if(st.gameMode==='defense') updateDefense(st,map,STEP); st.events.forEach(ev=>{ if(ev.t==='hit')renderer.hit(ev.x,ev.z); if(ev.t==='gather'){ if(ev.kind==='gold')sfx.coin(); else sfx.chop(); } if(ev.t==='toast')toast(ev.msg); if(ev.t==='bell')sfx.bell(); if(ev.t==='season'){ renderer.setSeason(ev.season); toast('❄️ Winter falls — farms thin, the forest sleeps.',4200); } }); acc-=STEP; n++;
+      aiAcc+=STEP; if(aiAcc>2){aiAcc=0; if(!st.tutorial&&st.gameMode!=='defense'){try{aiTick(st,map);}catch(err){console.warn(err);}} }
     }
     saveAcc+=dt; if(saveAcc>15){saveAcc=0; if(!st.tutorial)saveGame(st,map);}
     if(acc>STEP*5) acc=STEP*5;
@@ -370,7 +379,7 @@ function endGame(win,draw){
   if(st.stats.kills[0]>=20) addAch(prof,'⚔️20');
   setProfile(prof);
   $('endTitle').textContent=draw?'Draw!':win?'🏆 Victory!':'💀 Defeat';
-  $('endSub').textContent=draw?'Both halls fell.':win?`Enemy Town Hall razed in ${fmt(st.t)}! Kills ${st.stats.kills[0]}–${st.stats.kills[1]}.`:`Your Town Hall fell at ${fmt(st.t)}. Kills ${st.stats.kills[0]}–${st.stats.kills[1]}. Try ${st.aiPersona==='aggressor'?'turtling with Towers':'scouting earlier'}!`;
+  $('endSub').textContent=st.gameMode==='defense'?`You ${win?'survived all waves':'fell during wave '+Math.max(1,st.defense?.wave||1)} in ${fmt(st.t)}. Kills ${st.stats.kills[0]}.`:(draw?'Both halls fell.':win?`Enemy Town Hall razed in ${fmt(st.t)}! Kills ${st.stats.kills[0]}–${st.stats.kills[1]}.`:`Your Town Hall fell at ${fmt(st.t)}. Kills ${st.stats.kills[0]}–${st.stats.kills[1]}. Try ${st.aiPersona==='aggressor'?'turtling with Towers':'scouting earlier'}!`);
   $('endcard').style.display='flex';
   $('againBtn').onclick=()=>{location.reload();};
   $('menuBtn').onclick=()=>{ $('endcard').style.display='none'; $('menu').style.display='flex'; running=false; renderFactions(); };
