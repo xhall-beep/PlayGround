@@ -215,5 +215,5 @@ export function nearestHall(st,owner,x,z){
   return best;
 }
 export function fireProjectile(st,src,tgt,dmg){
-  st.entities.push({id:(Math.random()*1e9)|0,cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2,armorPierce:src.armorPierce||0});
+  addEntity(st,{cat:'proj',owner:src.owner,x:src.x,z:src.z-0.5,tgt:tgt.id,dmg,life:2,armorPierce:src.armorPierce||0});
 }

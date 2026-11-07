@@ -10,13 +10,22 @@ export function makeState(opts){
     fog: opts.fog!=='off',
     playerFaction: opts.faction||'human', aiFaction: opts.aiFaction||'undead',
     aiPersona: opts.ai||'expander',
-    seed: (Math.random()*1e9)|0,
+    seed: (opts.seed??((Math.random()*1e9)|0))>>>0,
+    rngState:0,
     entities:[], // {id,owner,kind,type,x,z,hp,maxHp,state,...}
     res:[ {gold:220,wood:160,food:2,popCap:5},{gold:220,wood:160,food:2,popCap:5} ],
     stats:{ kills:[0,0], razes:[0,0] },
     firstBlood:false,
     achievements:[],
   };
+}
+
+// Seeded random stream for sim/AI decisions; saved state keeps replays stable.
+export function random(st){
+  let x=(st.rngState||st.seed||1)>>>0;
+  x^=x<<13; x^=x>>>17; x^=x<<5;
+  st.rngState=x>>>0;
+  return st.rngState/4294967296;
 }
 
 // grid helpers — world 96x96 units, cell 2
@@ -36,12 +45,12 @@ export function popCap(st,owner){
 }
 
 export function canAfford(st,owner,cost,fm){
-  const r=st.res[owner];
-  return r.gold>=(cost.gold||0)*(fm?.cost??1)-1e-6 && r.wood>=(cost.wood||0)*(fm?.cost??1)-1e-6;
+  const r=st.res[owner], m=fm?.cost??1;
+  return r.gold>=(cost.gold||0)*m-1e-6 && r.wood>=(cost.wood||0)*m-1e-6 && (r.food||0)>=(cost.food||0)*m-1e-6;
 }
 export function pay(st,owner,cost,fm){
   const r=st.res[owner], m=fm?.cost??1;
-  r.gold-= (cost.gold||0)*m; r.wood-=(cost.wood||0)*m;
+  r.gold-= (cost.gold||0)*m; r.wood-=(cost.wood||0)*m; r.food=Math.max(0,(r.food||0)-(cost.food||0)*m);
 }
 
 // --- spatial hash for queries
@@ -58,20 +67,25 @@ export function dealDamage(st,src,tgt,baseDmg){
   if(src?.buff?.rally>0) d *= 1.4;
   if(tgt.buff?.rally>0) d = Math.max(1, d-2);
   tgt.hp -= d; tgt.flash=0.25;
-  if(tgt.hp<=0){ tgt.hp=0; tgt.dead=true; tgt.deathT=0.6;
-    if(tgt.cat==='unit') st.stats.kills[src.owner===0?0:1]+=0; // kills counted by killer below
-    if(src&&src.owner!==undefined&&tgt.cat==='unit'){ st.stats.kills[src.owner]+=1; if(!st.firstBlood){st.firstBlood=true; st.events.push({t:'toast',msg:`🩸 First blood — ${src.owner===0?'you strike!':'enemy strikes!'}`});} }
-    if(tgt.cat==='bld'&&tgt.done){ st.events.push({t:'toast',msg:`${tgt.owner===0?'😱 Your':'🔥 Enemy'} ${BUILDINGS[tgt.type]?.name||tgt.type} destroyed!`}); }
-    if(tgt.type==='townhall'){ checkGameOver(st); }
-    // Faction signatures: Undead raise the slain, Demon strikes leave a burn.
-    if(src&&src.owner!==undefined&&tgt.cat==='unit'){
-      const kf=factionMult(src.owner===0?st.playerFaction:st.aiFaction);
-      if(kf.burn) tgt.burn={t:3,dps:2,owner:src.owner};
-      if(kf.raise&&Math.random()<kf.raise){
-        const u=UNITS.skeleton;
-        addEntity(st,{cat:'unit',type:'skeleton',owner:src.owner,x:tgt.x+(Math.random()*2-1),z:tgt.z+(Math.random()*2-1),hp:u.hp*kf.hp,maxHp:u.hp*kf.hp,dmg:u.dmg*kf.dmg,armor:u.armor,range:u.range,speed:u.speed*kf.speed,sight:u.sight,armorPierce:u.armorPierce||0,order:null,carry:null,carryAmt:0,cool:0});
-        st.events.push({t:'toast',msg:'💀 A skeleton rises!'});
-      }
+  if(tgt.hp<=0) killEntity(st,src,tgt);
+}
+function killEntity(st,src,tgt){
+  if(tgt.dead) return;
+  tgt.hp=0; tgt.dead=true; tgt.deathT=0.6;
+  if(src&&src.owner!==undefined&&tgt.cat==='unit'){
+    st.stats.kills[src.owner]+=1;
+    if(!st.firstBlood){st.firstBlood=true; st.events.push({t:'toast',msg:`🩸 First blood — ${src.owner===0?'you strike!':'enemy strikes!'}`});}
+  }
+  if(tgt.cat==='bld'&&tgt.done) st.events.push({t:'toast',msg:`${tgt.owner===0?'😱 Your':'🔥 Enemy'} ${BUILDINGS[tgt.type]?.name||tgt.type} destroyed!`});
+  if(tgt.type==='townhall') checkGameOver(st);
+  // Faction signatures: Undead raise the slain, Demon strikes leave a burn.
+  if(src&&src.owner!==undefined&&tgt.cat==='unit'){
+    const kf=factionMult(src.owner===0?st.playerFaction:st.aiFaction);
+    if(kf.burn) tgt.burn={t:3,dps:2,owner:src.owner};
+    if(kf.raise&&random(st)<kf.raise){
+      const u=UNITS.skeleton;
+      addEntity(st,{cat:'unit',type:'skeleton',owner:src.owner,x:tgt.x+(random(st)*2-1),z:tgt.z+(random(st)*2-1),hp:u.hp*kf.hp,maxHp:u.hp*kf.hp,dmg:u.dmg*kf.dmg,armor:u.armor,range:u.range,speed:u.speed*kf.speed,sight:u.sight,armorPierce:u.armorPierce||0,order:null,carry:null,carryAmt:0,cool:0});
+      st.events.push({t:'toast',msg:'💀 A skeleton rises!'});
     }
   }
 }

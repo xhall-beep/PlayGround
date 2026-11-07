@@ -1,6 +1,6 @@
 // KINGDOMS RTS — main orchestration (Core loop + UI + Meta).
 import * as THREE from 'three';
-import { makeState, addEntity, byId, alive, reseedUID, saveGame, loadGame, wipeSave, getProfile, setProfile, popCap, ownerPop, canAfford, pay, WORLD, CELL, GRID } from './core/engine.js';
+import { makeState, addEntity, byId, alive, reseedUID, saveGame, loadGame, wipeSave, getProfile, setProfile, popCap, ownerPop, canAfford, pay, random, WORLD, CELL, GRID } from './core/engine.js';
 import { genMap, updateFog } from './world/world.js';
 import { tick, spawnBase, orderMove, orderAttack, orderGather, findResource } from './sim/sim.js';
 import { abilityFor, useAbility } from './sim/abilities.js';
@@ -229,7 +229,7 @@ function renderSel(forceBuild=false){
     html=`<h3>${B.icon} ${B.name} ${e.done?'':`(building ${((e.prog||0)*100)|0}%)`} ${e.owner===1?'(enemy)':''}</h3><p>❤️ ${e.hp|0}/${e.maxHp|0}</p>`;
     if(e.owner===0&&e.done){
       const opts=trainableAt(e.type);
-      if(opts.length){ html+=`<div class="btnrow">`; for(const u of opts){ const U=UNITS[u]; const locked=u==='knight'&&!st.entities.some(x=>x.owner===0&&x.type==='blacksmith'&&x.done); html+=`<button data-u="${u}" ${locked?'disabled':''}>${U.icon} ${U.name}<br><small>${Math.ceil(U.cost.gold*fm.cost)}🪙 ${Math.ceil(U.cost.wood*fm.cost)}🪵 ${U.time}s</small></button>`; } html+=`</div>`;
+      if(opts.length){ html+=`<div class="btnrow">`; for(const u of opts){ const U=UNITS[u]; const locked=u==='knight'&&!st.entities.some(x=>x.owner===0&&x.type==='blacksmith'&&x.done); html+=`<button data-u="${u}" ${locked?'disabled':''}>${U.icon} ${U.name}<br><small>${Math.ceil(U.cost.gold*fm.cost)}🪙 ${Math.ceil(U.cost.wood*fm.cost)}🪵 ${Math.ceil((U.cost.food||0)*fm.cost)}🍞 ${U.time}s</small></button>`; } html+=`</div>`;
         if(e.queue.length) html+=`<p>Training: ${e.queue.map(q=>UNITS[q].icon).join(' ')} ${(e.prog*100)|0}%</p>`; }
       if(e.type==='townhall') html+=`<p>Train Peasants to boom. Farms raise pop cap.</p>`;
     }
@@ -258,7 +258,7 @@ function onCardBtn(b,e,forceBuild){
     if(!peas){toast('Select a Peasant first');return;}
     if(!canAfford(st,0,BUILDINGS[bb].cost,fm)){toast('Not enough resources');return;}
     pay(st,0,BUILDINGS[bb].cost,fm);
-    let px=Math.max(-42,Math.min(42,peas.x+4+Math.random()*2)),pz=Math.max(-42,Math.min(42,peas.z+4));
+    let px=Math.max(-42,Math.min(42,peas.x+4+random(st)*2)),pz=Math.max(-42,Math.min(42,peas.z+4));
     if(st.tutorial&&renderer){
       // Keep the whole loop (site → trained unit spawn → tap) inside the fixed
       // camera. Bias toward the hall, then shrink until the site and its spawn
